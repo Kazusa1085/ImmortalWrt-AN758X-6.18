@@ -1,0 +1,18 @@
+#!/bin/sh /etc/rc.common
+# The PON line state machine starts when pon0 is opened by the kernel;
+# bring it up and apply the configured line mode on every boot.
+START=20
+
+start() {
+	local device mode
+
+	config_load pon
+	config_get device line0 device
+	config_get mode line0 mode
+
+	[ -n "$device" ] || return 0
+	[ -n "$mode" ] || mode=xgpon
+
+	ip link set "$device" up 2>/dev/null
+	/usr/sbin/ponctl --device "$device" mode set "$mode" 2>/dev/null
+}

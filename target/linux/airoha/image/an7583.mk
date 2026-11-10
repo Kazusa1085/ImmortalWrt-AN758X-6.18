@@ -20,21 +20,31 @@ define Device/FitImageLzma
   KERNEL_NAME := Image
 endef
 
-define Device/airoha_an7583-evb-multievb
+define Device/airoha_an7583-evb
   $(call Device/FitImageLzma)
   DEVICE_VENDOR := Airoha
-  DEVICE_MODEL := AN7583 Evaluation Board (Multi-evb)
+  DEVICE_MODEL := AN7583 Evaluation Board (SNAND)
   DEVICE_PACKAGES := aeonsemi-as21xxx-firmware kmod-leds-pwm \
-	kmod-pwm-airoha kmod-input-gpio-keys-polled kmod-phy-airoha-en8811h
-  DEVICE_DTS := an7583-evb-multievb
-  DEVICE_DTS_OVERLAY := an7583-evb an7583-evb-emmc
+	kmod-pwm-airoha kmod-input-gpio-keys-polled
+  DEVICE_DTS := an7583-evb
   IMAGE/sysupgrade.bin := append-kernel | pad-to 128k | append-rootfs | \
 	pad-rootfs | append-metadata
   ARTIFACT/preloader.bin := an7583-preloader rfb
   ARTIFACT/bl31-uboot.fip := an7583-bl31-uboot rfb
   ARTIFACTS := preloader.bin bl31-uboot.fip
 endef
-TARGET_DEVICES += airoha_an7583-evb-multievb
+TARGET_DEVICES += airoha_an7583-evb
+
+define Device/airoha_an7583-evb-emmc
+  DEVICE_VENDOR := Airoha
+  DEVICE_MODEL := AN7583 Evaluation Board (EMMC)
+  DEVICE_DTS := an7583-evb-emmc
+  DEVICE_PACKAGES := kmod-phy-airoha-en8811h
+  ARTIFACT/preloader.bin := an7583-preloader rfb
+  ARTIFACT/bl31-uboot.fip := an7583-bl31-uboot rfb
+  ARTIFACTS := preloader.bin bl31-uboot.fip
+endef
+TARGET_DEVICES += airoha_an7583-evb-emmc
 
 define Device/nokia_xg-040g-mf-common
   $(call Device/FitImageLzma)
@@ -79,3 +89,31 @@ define Device/nokia_xg-040g-mf-ubi
   ARTIFACTS := bl31-uboot.fip preloader.bin
 endef
 TARGET_DEVICES += nokia_xg-040g-mf-ubi
+
+define Device/vsol_v2902a-s-ubi
+  DEVICE_VENDOR := VSOL
+  DEVICE_MODEL := V2902A-S
+  DEVICE_VARIANT := UBI
+  DEVICE_DTS := an7583-vsol-v2902a-s
+  DEVICE_PACKAGES := fitblk kmod-sfp kmod-airoha-xpon kmod-airoha-en7572 \
+	airoha-pond airoha-ponctl luci-light luci-theme-aurora \
+	luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
+	luci-i18n-onu-zh-cn luci-app-onu luci-app-pon-status airoha-pon-debug
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  UBINIZE_OPTS := -E 5
+  UBOOTENV_IN_UBI := 1
+  KERNEL_IN_UBI := 1
+  KERNEL := kernel-bin | gzip
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 128k
+  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
+  IMAGES := sysupgrade.itb
+  IMAGE/sysupgrade.itb := append-kernel | \
+	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | \
+	append-metadata
+  ARTIFACT/bl31-uboot.fip := an7583-bl31-uboot vsol_v2902a-s
+  ARTIFACT/preloader.bin := an7583-preloader vsol_v2902a-s
+  ARTIFACTS := bl31-uboot.fip preloader.bin
+endef
+TARGET_DEVICES += vsol_v2902a-s-ubi

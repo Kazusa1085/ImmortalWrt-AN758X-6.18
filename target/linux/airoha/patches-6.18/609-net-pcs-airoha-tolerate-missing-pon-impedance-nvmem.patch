@@ -1,0 +1,28 @@
+--- a/drivers/net/pcs/airoha/pcs-an7583.c
++++ b/drivers/net/pcs/airoha/pcs-an7583.c
+@@ -55,6 +55,8 @@
+ 
+ 	ret = nvmem_cell_read_variable_le_u32(dev, "pon-impedance-valid",
+ 					      &value);
++	if (ret == -ENOENT)
++		return 0;
+ 	if (ret)
+ 		return ret;
+ 
+@@ -63,12 +65,16 @@
+ 
+ 	ret = nvmem_cell_read_variable_le_u32(dev, "pon-tx-term",
+ 					      &value);
++	if (ret == -ENOENT)
++		return 0;
+ 	if (ret)
+ 		return ret;
+ 	priv->pon_tx_term_sel = value;
+ 
+ 	ret = nvmem_cell_read_variable_le_u32(dev, "pon-rx-impedance",
+ 					      &value);
++	if (ret == -ENOENT)
++		return 0;
+ 	if (ret)
+ 		return ret;
+ 	priv->pon_rx_term_sel = value;

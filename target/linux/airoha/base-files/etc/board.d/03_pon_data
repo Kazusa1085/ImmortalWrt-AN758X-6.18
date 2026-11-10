@@ -50,6 +50,9 @@ nokia,xg-040g-mf)
 	pon_data_target bosa mtd 262144
 	pon_data_target ri mtd 262144
 	;;
+vsol,v2902a-s-ubi)
+	pon_data_target factory mtd 1048576
+	;;
 esac
 
 json_close_object
@@ -82,6 +85,19 @@ nokia,xg-040g-md|nokia,xg-040g-md-ubi|nokia,xg-040g-tf-ubi|nokia,xg-040g-mf-ubi|
 	json_add_object fields
 	identity_field pon_sn pon-sn 26 12 pon-ascii12 88
 	identity_field board_mac mac 62 6 mac-binary6
+	json_close_object
+	json_close_object
+	json_close_object
+	json_close_object
+	;;
+vsol,v2902a-s-ubi)
+	identity_available=1
+	json_add_object identity
+	json_add_object targets
+	json_add_object factory
+	json_add_object fields
+	identity_field pon_sn pon-sn 78 12 pon-ascii12
+	identity_field pon_mac mac 2 12 mac-hex12
 	json_close_object
 	json_close_object
 	json_close_object

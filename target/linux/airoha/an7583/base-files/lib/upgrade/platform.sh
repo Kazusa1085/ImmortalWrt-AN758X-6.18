@@ -13,7 +13,7 @@ platform_check_image() {
 	local board=$(board_name)
 
 	case "$board" in
-	nokia,xg-040g-mf-ubi)
+	nokia,xg-040g-mf-ubi|vsol,v2902a-s-ubi)
 		fit_check_image "$1"
 		return $?
 		;;
@@ -30,7 +30,7 @@ platform_do_upgrade() {
 	local board=$(board_name)
 
 	case "$board" in
-	nokia,xg-040g-mf-ubi)
+	nokia,xg-040g-mf-ubi|vsol,v2902a-s-ubi)
 		fit_do_upgrade "$1"
 		;;
 	*)

@@ -1,0 +1,79 @@
+{
+	"admin/status/onu": {
+		"title": "ONU 状态",
+		"order": 60,
+		"action": {
+			"type": "view",
+			"path": "onu/status"
+		}
+	},
+	"admin/onu": {
+		"title": "ONU",
+		"order": 20,
+		"action": {
+			"type": "firstchild"
+		}
+	},
+	"admin/onu/info": {
+		"title": "硬件信息",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "onu/info"
+		}
+	},
+	"admin/onu/wan": {
+		"title": "广域网配置",
+		"order": 20,
+		"action": {
+			"type": "firstchild"
+		}
+	},
+	"admin/onu/wan/auth": {
+		"title": "PON 认证",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "onu/config"
+		}
+	},
+	"admin/onu/wan/internet": {
+		"title": "上网设置",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "onu/internet"
+		}
+	},
+	"admin/onu/advanced": {
+		"title": "高级设置",
+		"order": 30,
+		"action": {
+			"type": "firstchild"
+		}
+	},
+	"admin/onu/advanced/iptv": {
+		"title": "IPTV",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "onu/iptv"
+		}
+	},
+	"admin/onu/advanced/voice": {
+		"title": "语音",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "onu/voice"
+		}
+	},
+	"admin/onu/diagnostics": {
+		"title": "诊断",
+		"order": 40,
+		"action": {
+			"type": "view",
+			"path": "onu/diagnostics"
+		}
+	}
+}

@@ -1,0 +1,24 @@
+#!/bin/sh
+. /lib/functions.sh
+config_load network-opt
+config_get speed settings sfp_speed auto
+[ -e /sys/class/net/eth1 ] || exit 0
+
+cur_speed="$(ethtool eth1 2>/dev/null | awk '/Speed:/{print $2}' | tr -d 'Mb/s')"
+cur_autoneg="$(ethtool eth1 2>/dev/null | awk '/Auto-negotiation:/{print $2}')"
+[ -n "$cur_autoneg" ] || cur_autoneg=off
+
+apply() {
+	case "$1" in
+	auto) ethtool -s eth1 autoneg on 2>/dev/null ;;
+	1000|2500|10000) ethtool -s eth1 speed "$1" autoneg off 2>/dev/null ;;
+	*) return 1 ;;
+	esac
+}
+
+apply "$speed" || exit 1
+sleep 3
+if ! ethtool eth1 2>/dev/null | grep -q 'Link detected: yes'; then
+	logger -t network-opt "SFP speed $speed lost link; restoring $cur_speed/$cur_autoneg"
+	[ -n "$cur_speed" ] && ethtool -s eth1 speed "$cur_speed" autoneg "$cur_autoneg" 2>/dev/null
+fi
