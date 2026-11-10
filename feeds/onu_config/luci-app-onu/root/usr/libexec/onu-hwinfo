@@ -1,0 +1,47 @@
+#!/bin/sh
+# Read-only factory and optical calibration summary used by the hardware page.
+. /usr/share/libubox/jshn.sh
+. /lib/upgrade/nand.sh
+
+json_init
+
+model="$(jsonfilter -i /etc/board.json -e '@.model.name' 2>/dev/null)"
+factory_size="$(jsonfilter -i /etc/board.json -e '@.pon_data.factory.size' 2>/dev/null)"
+factory_index="$(find_mtd_index factory 2>/dev/null)"
+cal_path="$(find /sys/devices -path '*cells/calibration@260000,0' 2>/dev/null | head -1)"
+
+json_add_string model_name "$model"
+json_add_int factory_size "${factory_size:-0}"
+json_add_string factory_index "$factory_index"
+if [ -n "$factory_index" ]; then
+	json_add_string factory_sha256 "$(sha256sum "/dev/mtd$factory_index" 2>/dev/null | cut -d' ' -f1)"
+fi
+
+json_add_object fields
+for field in pon_sn pon_mac; do
+	offset="$(jsonfilter -i /etc/board.json -e "@.identity.targets.factory.fields.$field.offset" 2>/dev/null)"
+	size="$(jsonfilter -i /etc/board.json -e "@.identity.targets.factory.fields.$field.size" 2>/dev/null)"
+	encoding="$(jsonfilter -i /etc/board.json -e "@.identity.targets.factory.fields.$field.encoding" 2>/dev/null)"
+	value=
+	if [ -n "$offset" ] && [ -n "$size" ] && [ -n "$factory_index" ]; then
+		value="$(dd if="/dev/mtd$factory_index" bs=1 skip="$offset" count="$size" 2>/dev/null | tr -d '\000')"
+	fi
+	json_add_object "$field"
+	json_add_int offset "${offset:-0}"
+	json_add_int size "${size:-0}"
+	json_add_string encoding "$encoding"
+	json_add_string value "$value"
+	json_select ..
+done
+json_select ..
+
+json_add_object calibration
+json_add_string path "$cal_path"
+if [ -n "$cal_path" ] && [ -r "$cal_path" ]; then
+	json_add_int size "$(wc -c < "$cal_path")"
+	json_add_string sha256 "$(sha256sum "$cal_path" 2>/dev/null | cut -d' ' -f1)"
+	json_add_string hex "$(hexdump -v -e '16/1 "%02x " "\n"' -n 16 "$cal_path" 2>/dev/null | tr '\n' ' ')"
+fi
+json_select ..
+
+json_dump

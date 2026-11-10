@@ -1,0 +1,7 @@
+#!/bin/sh
+[ "$PKG_UPGRADE" = 1 ] && exit 0
+uci get luci.main.lang >/dev/null 2>&1 || uci batch <<-BATCH
+	set luci.main.lang=zh_cn
+	commit luci
+BATCH
+exit 0

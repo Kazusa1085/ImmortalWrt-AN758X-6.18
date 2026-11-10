@@ -1,0 +1,2 @@
+config settings 'settings'
+	option sfp_speed '10000'

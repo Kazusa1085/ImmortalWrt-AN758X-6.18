@@ -1,0 +1,9 @@
+#!/bin/sh
+# Hide the ONU Voice menu entry on this board: no FXS hardware. The voice
+# page and configuration stay in the image untouched, so other boards keep it.
+M=/usr/share/luci/menu.d/luci-app-onu.json
+N=/etc/vsol/luci-app-onu-menu.json
+[ -f "$M" ] || exit 0
+[ -f "$N" ] || exit 0
+cp "$N" "$M"
+exit 0

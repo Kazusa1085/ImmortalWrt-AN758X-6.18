@@ -1,0 +1,516 @@
+// SPDX-License-Identifier: Apache-2.0
+
+'use strict';
+'require form';
+'require network';
+'require uci';
+'require view';
+var STYLESHEET = 'view/onu/onu.css';
+
+/*
+ * The names internet-apply derives from this page. Keeping them here mirrors
+ * what the apply script writes: the same principle as the upstream device on
+ * the IPTV page, which has to follow iptv-apply branch by branch.
+ */
+var VLAN_DEVICE = 'ct-wanup';
+var BRIDGE_DEVICE = 'br-wanup';
+
+/*
+ * The PON views follow luci-theme-argon: cards, form rows and buttons all come
+ * from the theme. Only the small helper stylesheet is ours.
+ */
+function ensureStylesheet() {
+	var href;
+
+	if (document.querySelector('link[data-pon-stylesheet]'))
+		return;
+
+	href = (typeof L.resource == 'function') ? L.resource(STYLESHEET) : null;
+
+	if (!href)
+		href = ((L.env && L.env.base_url) || '/luci-static/resources') + '/' + STYLESHEET;
+
+	document.head.appendChild(E('link', {
+		'rel': 'stylesheet',
+		'href': href,
+		'data-pon-stylesheet': ''
+	}));
+}
+
+function listPonDevices() {
+	return uci.sections('pon', 'xpon').map(function(line) {
+		return line.device || line['.name'];
+	}).join(', ') || '-';
+}
+
+/*
+ * Port ownership across the three PON service pages, mirroring
+ * port_owned_elsewhere() in internet-apply.
+ *
+ * A dedicated bridge port (internet bridge, IPTV set-top box port, voice
+ * bridge port) leaves br-lan and belongs to exactly one service bridge, so no
+ * other page may pick it. A trunk port stays in br-lan and only carries tagged
+ * 8021q subinterfaces, so the IPTV and voice trunks may share one port on
+ * purpose - but a dedicated port must never become a trunk port either, or it
+ * would carry foreign tagged VLANs while its own service expects it untagged.
+ *
+ * The internet page owns ports in bridge mode only, and a bridged port is a
+ * dedicated port. So both the IPTV and the voice port are off-limits here in
+ * either of their delivery modes.
+ */
+function portsOf(value) {
+	return L.toArray(value).filter(function(port) {
+		return !!port;
+	});
+}
+
+function portLabel(name) {
+	if (name === 'lan1')
+		return _('1G LAN (%s)').format(name);
+
+	if (name === 'eth1')
+		return _('10G SFP+ (%s)').format(name);
+
+	return name;
+}
+
+function iptvPorts() {
+	if (uci.get('onu-iptv', 'config', 'enabled') !== '1')
+		return [];
+
+	switch (uci.get('onu-iptv', 'config', 'mode')) {
+	case 'bridge':
+		return portsOf(uci.get('onu-iptv', 'config', 'lan_port'));
+
+	case 'trunk':
+		return portsOf(uci.get('onu-iptv', 'config', 'trunk_port'));
+	}
+
+	return [];
+}
+
+function voicePorts() {
+	if (uci.get('onu-voice', 'network', 'enabled') !== '1')
+		return [];
+
+	switch (uci.get('onu-voice', 'network', 'mode')) {
+	case 'bridge':
+		return portsOf(uci.get('onu-voice', 'network', 'lan_port'));
+
+	case 'trunk':
+		return portsOf(uci.get('onu-voice', 'network', 'trunk_port'));
+	}
+
+	return [];
+}
+
+/* Every port another page already bound, so it can be left out of the picker. */
+function foreignPorts() {
+	return iptvPorts().concat(voicePorts());
+}
+
+/* Who owns the port, for the validation message. */
+function portOwner(port) {
+	if (iptvPorts().indexOf(port) >= 0)
+		return _('IPTV');
+
+	if (voicePorts().indexOf(port) >= 0)
+		return _('voice');
+
+	return null;
+}
+
+function selectedPorts(sectionId) {
+	return L.toArray(uci.get('onu-internet', 'config', 'ports'));
+}
+
+function validatePorts(sectionId, value) {
+	var ports = L.toArray(value);
+	var owner, i;
+
+	if (!ports.length)
+		return _('Pick at least one LAN port for the internet bridge.');
+
+	for (i = 0; i < ports.length; i++) {
+		owner = portOwner(ports[i]);
+
+		if (owner)
+			return _('This port is already bound by the %s page; free it there first.').format(owner);
+	}
+
+	return true;
+}
+
+/*
+ * Mirror of want_ipv6() in internet-apply. It has to agree with the script,
+ * otherwise this page and the config it writes drift apart.
+ */
+function wantsIPv6() {
+	switch (uci.get('onu-internet', 'config', 'ip_version')) {
+	case 'ipv6':
+	case 'ipv4_ipv6':
+	case 'dual':
+		return true;
+	}
+
+	return false;
+}
+
+/*
+ * What the apply script builds from the current settings. Layer two devices are
+ * not invented by the user, they are derived - showing them keeps this page and
+ * internet-apply readable against each other.
+ *
+ * In UNTAG transparent mode there is no 8021q subinterface: the uplink itself
+ * carries the service, so the ".vlan" part is dropped from every line.
+ */
+function derivedDevices() {
+	var uplink = uci.get('onu-internet', 'config', 'uplink') || 'pon0';
+	var vlan = uci.get('onu-internet', 'config', 'vlan');
+	var tmode = uci.get('onu-internet', 'config', 'transparent_mode') || 'tag';
+
+	if (uci.get('onu-internet', 'config', 'enabled') !== '1')
+		return '-';
+
+	var iface = (tmode === 'untag') ? uplink : '%s.%s'.format(uplink, vlan || '?');
+
+	switch (uci.get('onu-internet', 'config', 'mode')) {
+	case 'pppoe':
+		return '%s (%s) -> pppoe-wan'.format(iface, VLAN_DEVICE);
+
+	case 'dhcp':
+		/* Only the dual-stack case gets a second interface: that is the one
+		 * place a real DHCPv6 client is written. */
+		return '%s (%s) -> wan%s'.format(iface, VLAN_DEVICE,
+			wantsIPv6() ? ' + wan6' : '');
+
+	default:
+		/* UNTAG bridge inlines the raw uplink into br-wanup: the Airoha kernel
+		 * rejects a bridge nested in a bridge, so ct-wanup is not created there
+		 * and the uplink itself is the bridge member. Show it directly. */
+		if (tmode === 'untag')
+			return '%s + LAN ports -> %s'.format(uplink, BRIDGE_DEVICE);
+		return '%s (%s) + LAN ports -> %s'.format(iface, VLAN_DEVICE, BRIDGE_DEVICE);
+	}
+}
+
+return view.extend({
+	load: function() {
+		return Promise.all([
+			network.getDevices(),
+			uci.load('onu-internet'),
+			uci.load('onu-iptv'),
+			uci.load('onu-voice'),
+			uci.load('network')
+		]).then(function(results) {
+			return results[0];
+		});
+	},
+
+	render: function(devices) {
+		var m, s, o, allLanPorts, lanPorts, current, taken;
+
+		ensureStylesheet();
+
+		/*
+		 * One card. The map title is the page heading, so the section must not
+		 * repeat it, and there is no tab here: the mode switch already hides
+		 * half of the fields, and a second grouping on top of it would only
+		 * hide where the fields actually live.
+		 */
+		m = new form.Map('onu-internet', _('ONU Internet'),
+			_('The internet service carried by the PON uplink: either handed over as a bridge so a downstream router dials, or dialled by the ONT itself.'));
+		m.readonly = !L.hasViewPermission();
+
+		s = m.section(form.NamedSection, 'config', 'internet');
+		s.anonymous = true;
+		s.addremove = false;
+
+		o = s.option(form.Flag, 'enabled', _('Enable'));
+		o.default = '0';
+		o.rmempty = false;
+		o.description = _('With the service off, no VLAN subinterface and no dialling interface is written, and the stock WAN interfaces of the network page are put back.');
+
+		/*
+		 * Transparent mode sits above the VLAN field because it governs whether
+		 * the VLAN field is usable at all: TAG carries the service on an 8021q
+		 * subinterface and needs a VLAN ID; UNTAG hands the raw uplink through
+		 * and the VLAN field below is disabled.
+		 */
+		o = s.option(form.ListValue, 'transparent_mode', _('Transparent mode'),
+			_('TAG mode requires an Internet VLAN ID for the service. UNTAG mode passes the raw uplink through without VLAN tagging, so the Internet VLAN field below is hidden and no VLAN is stored.'));
+		o.default = 'tag';
+		o.rmempty = false;
+		o.value('tag', _('TAG'));
+		o.value('untag', _('UNTAG'));
+		o.depends('enabled', '1');
+
+		o = s.option(form.Value, 'vlan', _('Internet VLAN'),
+			_('The operator VLAN carrying the internet service. It becomes an 8021q subinterface of the uplink, never a member of br-lan.'));
+		o.placeholder = '1-4094';
+		o.datatype = 'range(1,4094)';
+		o.rmempty = false;
+		o.validate = function(sectionId, value) {
+			var vlan = String(value || ''), conflicts = [];
+
+			if (!vlan)
+				return true;
+
+			/* The three PON service pages write separate 802.1q
+			 * subinterfaces on the same uplink. A VLAN ID shared with
+			 * an enabled service would make two services fight for the
+			 * same tagged frames, so warn before saving. */
+			if (uci.get('onu-iptv', 'config', 'enabled') === '1') {
+				[ 'service_vlan', 'multicast_vlan', 'igmp_vlan' ].forEach(function(opt) {
+					if (String(uci.get('onu-iptv', 'config', opt) || '') === vlan)
+						conflicts.push('IPTV ' + opt);
+				});
+			}
+
+			if (uci.get('onu-voice', 'network', 'enabled') === '1' &&
+			    String(uci.get('onu-voice', 'network', 'vlan_id') || '') === vlan)
+				conflicts.push('voice VLAN');
+
+			if (conflicts.length)
+				return _('This VLAN is already used by %s.').format(conflicts.join(', '));
+
+			return true;
+		};
+
+		/*
+		 * Hidden outright in UNTAG instead of greyed out. A disabled input
+		 * still counts as an empty required field, so the page rejected the
+		 * save with "must not be empty" even though UNTAG has no VLAN at all.
+		 * depends() drops the whole row from the DOM in UNTAG, so there is
+		 * nothing left to validate.
+		 */
+		o.depends({ enabled: '1', transparent_mode: 'tag' });
+
+		/*
+		 * In UNTAG mode the VLAN has no meaning. The row is hidden by
+		 * depends(), and if the field is ever parsed anyway, the stored VLAN
+		 * is dropped so internet-apply never sees one in UNTAG.
+		 */
+		o.cfgvalue = function(section_id) {
+			if (uci.get('onu-internet', 'config', 'transparent_mode') === 'untag')
+				return '';
+			return uci.get('onu-internet', 'config', 'vlan') || '';
+		};
+
+		(function() {
+			var origVlanParse = o.parse;
+			o.parse = function(section_id) {
+				var tmodeEl = document.getElementById('cbi.onu-internet.config.transparent_mode');
+				var tmode = tmodeEl ? (tmodeEl.value || 'tag')
+				                    : (uci.get('onu-internet', 'config', 'transparent_mode') || 'tag');
+
+				if (tmode === 'untag')
+					return this.remove(section_id);
+
+				return origVlanParse.call(this, section_id);
+			};
+		})();
+
+		/*
+		 * Internet mode (Bridged / DHCP / PPPoE) lives below the VLAN field:
+		 * the VLAN identifies the service, the mode decides what is done with
+		 * it. Order is cosmetic here - depends() resolves against the DOM, not
+		 * the declaration order - but it keeps the reading order logical.
+		 */
+		o = s.option(form.ListValue, 'mode', _('Internet mode'),
+			_('Bridged hands the operator VLAN to your own router. DHCP takes whatever address the operator hands out. PPPoE lets the ONT terminate the session and route for the LAN.'));
+		o.default = 'bridge';
+		o.rmempty = false;
+		o.value('bridge', _('Bridged'));
+		o.value('dhcp', _('DHCP'));
+		o.value('pppoe', _('PPPoE'));
+		o.depends('enabled', '1');
+
+		/*
+		 * The selectable ports are the bridge members of br-lan: this board
+		 * bridges the 1G LAN port (lan1) and the 10G SFP+ port (eth1). A name
+		 * pattern is not enough here, the SFP port is eth1 and not lanX.
+		 */
+		allLanPorts = [];
+		uci.sections('network', 'device').forEach(function(dev) {
+			var devname = dev.name || dev['.name'];
+
+			if (devname !== 'br-lan')
+				return;
+
+			L.toArray(dev.ports).forEach(function(port) {
+				if (port && allLanPorts.indexOf(port) < 0)
+					allLanPorts.push(port);
+			});
+		});
+
+		if (!allLanPorts.length) {
+			allLanPorts = (devices || []).map(function(device) {
+				return device.getName();
+			}).filter(function(name) {
+				return /^lan[0-9]+$/.test(name);
+			});
+		}
+		allLanPorts.sort();
+
+		/*
+		 * A port the IPTV or the voice page already bound is not offered at
+		 * all: two services cannot own one port, and offering it would only
+		 * let the operator build a configuration internet-apply then refuses.
+		 */
+		taken = foreignPorts();
+		lanPorts = allLanPorts.filter(function(name) {
+			return taken.indexOf(name) < 0;
+		});
+
+		current = selectedPorts();
+
+		/*
+		 * form.MultiValue hands its choices to ui.Dropdown, whose render()
+		 * runs Object.keys() on them. Registering no choice at all is fatal:
+		 * form.js transformChoices() returns null when nothing was added,
+		 * and the dropdown's own guard - typeof(choices) != 'object' - does
+		 * not stop null, because typeof null is 'object'. Without devices
+		 * named lan[0-9]+, which is every booting board before netifd has
+		 * them and every stripped rootfs, the whole page would go down with
+		 * "TypeError: Cannot convert undefined or null to object".
+		 *
+		 * The IPTV page gets away with it because form.ListValue renders
+		 * through ui.Select, which normalises null to {}. Nothing can be
+		 * picked here in that state either, so say so instead of rendering
+		 * an empty picker.
+		 */
+		if (lanPorts.length || current.length) {
+			/*
+			 * Bridged ports are not just moved: they end up in the WAN zone,
+			 * which is why picking the port you manage the ONT from cuts you
+			 * off - no DHCP and no management pages are served there any more.
+			 * Say so up front instead of leaving it to the operator to infer.
+			 */
+			o = s.option(form.MultiValue, 'ports', _('LAN ports'),
+				_('The selected ports leave br-lan and join the internet bridge, where they are treated as operator-facing WAN ports: the ONT no longer serves DHCP or its own management pages (LuCI/SSH) on them. Leave at least one port unselected so the ONT stays manageable.'));
+			lanPorts.forEach(function(name) {
+				o.value(name, portLabel(name));
+			});
+			current.forEach(function(name) {
+				if (lanPorts.indexOf(name) < 0)
+					o.value(name, portLabel(name));
+			});
+			o.rmempty = false;
+			o.display_size = allLanPorts.length || 3;
+			o.validate = function(sectionId, value) {
+				var error = validatePorts(sectionId, value), picked, left;
+
+				if (error)
+					return error;
+
+				picked = L.toArray(value).filter(function(port) { return !!port; });
+				left = allLanPorts.filter(function(port) {
+					return picked.indexOf(port) < 0;
+				});
+
+				if (!left.length)
+					return _('At least one LAN port must stay in br-lan so the ONT stays reachable.');
+
+				return true;
+			};
+			o.depends({ enabled: '1', mode: 'bridge' });
+		}
+		else {
+			/*
+			 * Nothing left to offer. Say which of the two reasons applies:
+			 * no LAN port device at all, or every one of them already bound by
+			 * the IPTV or the voice page.
+			 */
+			var reason = allLanPorts.length
+				? _('Every LAN port is already bound by the IPTV or voice page. Free one there first.')
+				: _('No LAN port devices are available to bridge.');
+
+			o = s.option(form.DummyValue, '_ports', _('LAN ports'),
+				_('The selected ports leave br-lan and join the internet bridge, where they are treated as operator-facing WAN ports: the ONT no longer serves DHCP or its own management pages (LuCI/SSH) on them. Leave at least one port unselected so the ONT stays manageable.'));
+			o.cfgvalue = function() {
+				return reason;
+			};
+			o.depends({ enabled: '1', mode: 'bridge' });
+		}
+
+		o = s.option(form.Flag, 'ipoe', _('Also carry native IPv4/IPv6'),
+			_('Turn this on when the operator serves IPoE instead of PPPoE, otherwise only the PPPoE EtherTypes 0x8863 and 0x8864 are let through towards the uplink.'));
+		o.default = '0';
+		o.rmempty = false;
+		o.depends({ enabled: '1', mode: 'bridge' });
+
+		/*
+		 * One picker for both dialled modes, because both really do offer the
+		 * same two things. Where they differ is only where IPv6 comes from:
+		 *
+		 *   PPPoE: the session negotiates it. netifd raises its own virtual
+		 *          wan_6 on the ppp interface and runs DHCPv6 there. Writing a
+		 *          network.wan6 of our own used to put a *second* DHCPv6 client
+		 *          on the same session, which is why internet-apply no longer
+		 *          does it. Switching back to IPv4 only drops whatever wan6 is
+		 *          left over - no help from this page is needed for that.
+		 *
+		 *   DHCP : there is no session to derive anything from, so the page
+		 *          keeps the DHCPv6 client as a real wan6 interface.
+		 *
+		 * Two depends() calls are an OR, not an AND: one object means "all of
+		 * these keys match", two calls mean "either of them".
+		 */
+		o = s.option(form.ListValue, 'ip_version', _('IP protocol version'),
+			_('Dual stack over PPPoE takes IPv6 from the session itself; over DHCP it adds a DHCPv6 client asking for a prefix.'));
+		o.default = 'ipv4';
+		o.rmempty = false;
+		o.value('ipv4', _('IPv4 only'));
+		o.value('ipv4_ipv6', _('IPv4/IPv6 dual stack'));
+
+		/*
+		 * IPv6 only is no longer offered, but a configuration written by an
+		 * older build may still carry it. Keep its entry so the picker never
+		 * renders a value it does not know, which would silently fall back to
+		 * the first choice and turn the running stack off on the next save.
+		 */
+		if (uci.get('onu-internet', 'config', 'ip_version') === 'ipv6')
+			o.value('ipv6', _('IPv6 only (no longer offered)'));
+
+		o.depends({ enabled: '1', mode: 'pppoe' });
+		o.depends({ enabled: '1', mode: 'dhcp' });
+
+		o = s.option(form.Value, 'username', _('PPPoE user name'),
+			_('User name assigned by the operator.'));
+		o.rmempty = false;
+		o.depends({ enabled: '1', mode: 'pppoe' });
+
+		o = s.option(form.Value, 'password', _('PPPoE password'));
+		o.password = true;
+		o.rmempty = true;
+		o.depends({ enabled: '1', mode: 'pppoe' });
+
+		o = s.option(form.Value, 'mtu', _('MTU'),
+			_('MTU of the PPPoE interface, one PPPoE header below the Ethernet MTU.'));
+		o.default = '1492';
+		o.datatype = 'range(576,1500)';
+		o.rmempty = false;
+		o.depends({ enabled: '1', mode: 'pppoe' });
+
+		o = s.option(form.DummyValue, '_devices', _('Derived devices'),
+			_('What internet-apply builds. Both are 15 characters or shorter, which is what netifd and the kernel accept.'));
+		o.cfgvalue = derivedDevices;
+		o.depends('enabled', '1');
+
+		/*
+		 * Hardware offload used to be a switch on this page. It moved to its
+		 * own page, so there is nothing here any more: internet-apply still
+		 * honours onu-internet.config.offload, which is what lets an existing
+		 * configuration keep running unchanged until that page lands.
+		 */
+
+		/*
+		 * No post-render wiring for the VLAN field any more: depends() hides
+		 * the whole row in UNTAG, which is both simpler and safer than
+		 * disabling it - a disabled required field still failed validation
+		 * with "must not be empty".
+		 */
+		return m.render();
+	}
+});

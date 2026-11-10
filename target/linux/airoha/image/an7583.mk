@@ -89,3 +89,31 @@ define Device/nokia_xg-040g-mf-ubi
   ARTIFACTS := bl31-uboot.fip preloader.bin
 endef
 TARGET_DEVICES += nokia_xg-040g-mf-ubi
+
+define Device/vsol_v2902a-s-ubi
+  DEVICE_VENDOR := VSOL
+  DEVICE_MODEL := V2902A-S
+  DEVICE_VARIANT := UBI
+  DEVICE_DTS := an7583-vsol-v2902a-s
+  DEVICE_PACKAGES := fitblk kmod-sfp kmod-airoha-xpon kmod-airoha-en7572 \
+	airoha-pond airoha-ponctl luci-light luci-theme-aurora \
+	luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
+	luci-i18n-onu-zh-cn luci-app-onu luci-app-pon-status airoha-pon-debug
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  UBINIZE_OPTS := -E 5
+  UBOOTENV_IN_UBI := 1
+  KERNEL_IN_UBI := 1
+  KERNEL := kernel-bin | gzip
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 128k
+  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
+  IMAGES := sysupgrade.itb
+  IMAGE/sysupgrade.itb := append-kernel | \
+	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | \
+	append-metadata
+  ARTIFACT/bl31-uboot.fip := an7583-bl31-uboot vsol_v2902a-s
+  ARTIFACT/preloader.bin := an7583-preloader vsol_v2902a-s
+  ARTIFACTS := bl31-uboot.fip preloader.bin
+endef
+TARGET_DEVICES += vsol_v2902a-s-ubi

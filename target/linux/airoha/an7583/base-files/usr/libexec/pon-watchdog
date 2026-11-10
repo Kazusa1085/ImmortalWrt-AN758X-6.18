@@ -1,0 +1,52 @@
+#!/bin/sh
+# Keep the XPON line and the internet bridge in sync with the configuration.
+. /lib/functions.sh
+
+reconcile() {
+	local device mode enabled imode
+
+	config_load pon
+	config_get device line0 device
+	config_get mode line0 mode
+	[ -n "$device" ] || return 0
+	[ -n "$mode" ] || mode=xgpon
+	[ -e "/sys/class/net/$device" ] || return 0
+
+	ip link set "$device" up 2>/dev/null
+	if ! /usr/sbin/ponctl --device "$device" status 2>/dev/null |
+		grep -q '^lifecycle: operational'; then
+		/usr/sbin/ponctl --device "$device" mode set "$mode" >/dev/null 2>&1
+		logger -t pon-watchdog "PON line restart ($device, $mode)"
+	fi
+
+	config_load onu-internet
+	config_get_bool enabled config enabled 0
+	config_get imode config mode bridge
+
+	if [ "$enabled" -eq 1 ] && [ "$imode" = 'bridge' ]; then
+		if [ -e /sys/class/net/br-wanup ] && [ -e /sys/class/net/ct-wanup ]; then
+			ip link set br-wanup up 2>/dev/null
+			ip link set ct-wanup up 2>/dev/null
+			if ! ip link show ct-wanup 2>/dev/null | grep -q 'master br-wanup'; then
+				ip link set ct-wanup master br-wanup 2>/dev/null &&
+					logger -t pon-watchdog "attached ct-wanup to br-wanup"
+			fi
+		fi
+
+		if [ "$(uci -q get network.wan.device)" != 'br-wanup' ] &&
+		   [ ! -e /tmp/pon-watchdog-converged ]; then
+			: > /tmp/pon-watchdog-converged
+			/usr/libexec/internet-apply boot >/dev/null 2>&1
+			ubus call network reload >/dev/null 2>&1
+			sleep 2
+			ip link set "$device" up 2>/dev/null
+			/usr/sbin/ponctl --device "$device" mode set "$mode" >/dev/null 2>&1
+			logger -t pon-watchdog "re-applied bridge network configuration"
+		fi
+	fi
+}
+
+while :; do
+	reconcile
+	sleep 10
+done

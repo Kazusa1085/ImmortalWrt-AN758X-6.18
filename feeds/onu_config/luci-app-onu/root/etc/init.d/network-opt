@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+START=90
+USE_PROCD=1
+
+start_service() {
+	/usr/libexec/network-opt-apply
+	procd_open_instance
+	procd_set_param command /usr/libexec/sfp-apply
+	procd_set_param respawn 0 0 0
+	procd_close_instance
+}
+
+reload_service() {
+	/usr/libexec/network-opt-apply
+	/usr/libexec/sfp-apply
+}
+
+service_triggers() {
+	procd_add_reload_trigger "network-opt"
+	procd_add_reload_trigger "firewall"
+}

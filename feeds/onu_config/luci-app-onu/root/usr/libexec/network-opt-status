@@ -1,0 +1,18 @@
+#!/bin/sh
+echo "=== 硬件加速 ==="
+if [ -e /sys/kernel/debug/ppe/entries ]; then
+	echo "PPE 条目: $(wc -l < /sys/kernel/debug/ppe/entries)"
+else
+	echo "PPE 条目: 不可用"
+fi
+dmesg 2>/dev/null | grep -i 'airoha-npu.*NPU fw version' | tail -1 | sed 's/^/NPU: /'
+echo
+ echo "=== Flowtable ==="
+nft list flowtables 2>/dev/null | sed -n '1,80p'
+echo
+ echo "=== SFP 端口 ==="
+ethtool eth1 2>/dev/null | sed -n '1,30p'
+echo
+ echo "=== 防火墙 offload ==="
+uci -q get firewall.@defaults[0].flow_offloading_hw 2>/dev/null | sed 's/^/flow_offloading_hw=/'
+uci -q get firewall.@defaults[0].fullcone 2>/dev/null | sed 's/^/fullcone=/'

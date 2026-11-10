@@ -1,0 +1,337 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+#include "an7583.dtsi"
+
+/ {
+	model = "VSOL V2902A-S (UBI)";
+	compatible = "vsol,v2902a-s-ubi", "airoha,an7583", "airoha,en7583";
+
+	aliases {
+		led-boot = &led_system;
+		led-failsafe = &led_system;
+		led-running = &led_system;
+		led-upgrade = &led_system;
+		serial0 = &uart1;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200 earlycon root=/dev/fit0 rootwait";
+		rootdisk = <&ubi_fit>;
+		stdout-path = "serial0:115200n8";
+		linux,usable-memory-range = <0x0 0x80200000 0x0 0x1fe00000>;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x20000000>;
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		button-reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			gpios = <&an7583_pinctrl 0 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led_system: led-system {
+			color = <LED_COLOR_ID_GREEN>;
+			function = LED_FUNCTION_POWER;
+			gpios = <&an7583_pinctrl 7 GPIO_ACTIVE_LOW>;
+			panic-indicator;
+		};
+
+		led-pon {
+			color = <LED_COLOR_ID_GREEN>;
+			function = "pon";
+			gpios = <&an7583_pinctrl 12 GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "pon0-registration";
+		};
+
+		led-internet {
+			color = <LED_COLOR_ID_GREEN>;
+			function = LED_FUNCTION_WAN;
+			gpios = <&an7583_pinctrl 26 GPIO_ACTIVE_LOW>;
+		};
+
+		led-los {
+			color = <LED_COLOR_ID_RED>;
+			function = "los";
+			gpios = <&an7583_pinctrl 27 GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "pon0-los";
+		};
+
+		led-sfp {
+			color = <LED_COLOR_ID_GREEN>;
+			function = "sfp";
+			gpios = <&an7583_pinctrl 29 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	sfp: sfp {
+		compatible = "sff,sfp";
+		i2c-bus = <&i2c1>;
+		mod-def0-gpios = <&an7583_pinctrl 2 GPIO_ACTIVE_LOW>;
+		tx-disable-gpios = <&an7583_pinctrl 34 GPIO_ACTIVE_HIGH>;
+		maximum-power-milliwatt = <3000>;
+	};
+};
+
+&an7583_pinctrl {
+	gpio-ranges = <&an7583_pinctrl 0 2 53>;
+
+	mdio0_pins: mdio0-pins {
+		mux {
+			function = "mdio";
+			groups = "mdio";
+		};
+
+		conf {
+			pins = "mdio_0";
+			output-high;
+		};
+	};
+
+	spi_pins: spi-pins {
+		mux {
+			function = "spi";
+			groups = "spi";
+		};
+	};
+
+	gswp1_led0_pins: gswp1-led0-pins {
+		mux {
+			function = "phy1_led0";
+			pins = "gpio1";
+		};
+	};
+
+	pon_pins: pon-pins {
+		mux {
+			/* GPIO15 stays with the optical frontend as TX_DISABLE. */
+			function = "pon";
+			groups = "pon_tx_disable_gpio";
+		};
+	};
+
+	sfp-power {
+		gpio-hog;
+		gpios = <25 GPIO_ACTIVE_LOW>;
+		output-high;
+		line-name = "sfp-power";
+	};
+};
+
+&snfi {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi_pins>;
+	status = "okay";
+};
+
+&spi_nand {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0 {
+			label = "bl2";
+			reg = <0x00000000 0x00020000>;
+			read-only;
+		};
+
+		partition@20000 {
+			label = "ubi";
+			reg = <0x00020000 0x06860000>;
+			compatible = "linux,ubi";
+
+			volumes {
+				ubi-volume-bosa {
+					volname = "bosa";
+				};
+
+				ubi-volume-ri {
+					volname = "ri";
+				};
+
+				ubi_fit: ubi-volume-fit {
+					volname = "fit";
+				};
+
+				ubi-volume-fip {
+					volname = "fip";
+				};
+
+				ubi_env: ubi-volume-ubootenv {
+					volname = "ubootenv";
+				};
+
+				ubi_env2: ubi-volume-ubootenv2 {
+					volname = "ubootenv2";
+				};
+			};
+		};
+
+		partition@6880000 {
+			label = "factory";
+			reg = <0x06880000 0x00100000>;
+		};
+
+		partition@6c80000 {
+			label = "art";
+			reg = <0x06c80000 0x00380000>;
+			read-only;
+
+			nvmem-layout {
+				compatible = "fixed-layout";
+				#address-cells = <1>;
+				#size-cells = <1>;
+
+				pon_calibration: calibration@260000 {
+					reg = <0x260000 0x200>;
+				};
+			};
+		};
+	};
+};
+
+&ubi_env {
+	nvmem-layout {
+		compatible = "u-boot,env-redundant-bool-layout";
+	};
+};
+
+&ubi_env2 {
+	nvmem-layout {
+		compatible = "u-boot,env-redundant-bool-layout";
+	};
+};
+
+&an7583_pinctrl {
+	i2c0_pins: i2c0-pins {
+		mux {
+			function = "i2c";
+			groups = "i2c0";
+		};
+	};
+
+	i2c1_pins: i2c1-pins {
+		mux {
+			function = "i2c";
+			groups = "i2c1";
+		};
+	};
+};
+
+&i2c0 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins>;
+
+	en7572: optical-front-end@50 {
+		compatible = "airoha,en7572";
+		reg = <0x50>;
+		/* vendor DTS: phy_tx_power_disable is active-high, default on */
+		tx-disable-gpios = <&an7583_pinctrl 15 GPIO_ACTIVE_HIGH>;
+		nvmem-cells = <&pon_calibration>;
+		nvmem-cell-names = "calibration";
+	};
+};
+
+&i2c1 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c1_pins>;
+};
+
+&npu {
+	status = "okay";
+};
+
+&eth {
+	status = "okay";
+};
+
+&gdm1 {
+	status = "okay";
+};
+
+&gdm3 {
+	openwrt,netdev-name = "eth1";
+	managed = "in-band-status";
+	phy-mode = "usxgmii";
+	sfp = <&sfp>;
+	status = "okay";
+};
+
+&switch {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&mdio0_pins>;
+};
+
+&gsw_port1 {
+	status = "okay";
+	label = "lan1";
+};
+
+&gsw_phy1 {
+	status = "okay";
+	interrupts = <1>;
+	pinctrl-names = "gbe-led";
+	pinctrl-0 = <&gswp1_led0_pins>;
+};
+
+&gsw_phy1_led0 {
+	status = "okay";
+	color = <LED_COLOR_ID_GREEN>;
+	active-low;
+};
+
+&pon_pcs {
+	status = "okay";
+};
+
+&{/soc} {
+	xpon_mac: ethernet@1fb64000 {
+		compatible = "airoha,an7583-xpon-mac";
+		reg = <0x0 0x1fb64000 0x0 0x3e8>,
+		      <0x0 0x1fb65000 0x0 0xff8>,
+		      <0x0 0x1fb66000 0x0 0x1000>,
+		      <0x0 0x1faf0000 0x0 0x2000>;
+		reg-names = "gpon", "xgpon", "epon", "pon-phy";
+
+		interrupts = <GIC_SPI 42 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 43 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "mac", "phy";
+
+		pcs-handle = <&pon_pcs>;
+		airoha,scu = <&scuclk>;
+		airoha,default-line-mode = "xgpon";
+
+		optical-front-end = <&en7572>;
+		data-path = <&gdm2>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&pon_pins>;
+
+		status = "okay";
+	};
+};
+
+&gdm2 {
+	airoha,pon-data-path;
+	status = "okay";
+};

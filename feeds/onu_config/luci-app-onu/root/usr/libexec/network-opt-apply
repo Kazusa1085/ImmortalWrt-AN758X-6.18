@@ -1,0 +1,10 @@
+#!/bin/sh
+# Apply settings that firewall UCI cannot apply by itself.
+. /lib/functions.sh
+
+cca="$(uci -q get firewall.@defaults[0].tcpcca 2>/dev/null)"
+[ -n "$cca" ] || cca=cubic
+modprobe tcp_bbr 2>/dev/null
+if [ -w /proc/sys/net/ipv4/tcp_congestion_control ]; then
+	echo "$cca" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
+fi

@@ -1,0 +1,5 @@
+#!/bin/sh
+[ -f /etc/config/pon ] || exit 0
+[ -n "$(uci -q get pon.line0.mode)" ] || uci set pon.line0.mode='xgpon'
+uci -q commit pon
+exit 0

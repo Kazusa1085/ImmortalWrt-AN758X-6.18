@@ -1,0 +1,36 @@
+--- a/drivers/net/ethernet/airoha/airoha_eth.h
++++ b/drivers/net/ethernet/airoha/airoha_eth.h
+@@ -760,6 +760,12 @@
+ 	struct airoha_qdma qdma[AIROHA_MAX_NUM_QDMA];
+ 	struct airoha_gdm_port *ports[AIROHA_MAX_NUM_GDM_PORTS];
+ 
++	/* Base address for netdevs without a board/DT MAC. The frame engine
++	 * requires the same MSBs for every device sharing LAN/WAN config.
++	 */
++	u8 random_base_mac[ETH_ALEN];
++	bool random_base_mac_valid;
++
+ #ifdef CONFIG_AIROHA_PON_COMPAT
+ 	/* Optional legacy xPON register/IRQ compatibility view. */
+ 	void __iomem *pon_switch_regs;
+--- a/drivers/net/ethernet/airoha/airoha_eth.c
++++ b/drivers/net/ethernet/airoha/airoha_eth.c
+@@ -4743,7 +4743,17 @@
+ 		if (err == -EPROBE_DEFER)
+ 			return err;
+ 
+-		eth_hw_addr_random(netdev);
++		if (!eth->random_base_mac_valid) {
++			eth_hw_addr_random(netdev);
++			ether_addr_copy(eth->random_base_mac, netdev->dev_addr);
++			eth->random_base_mac_valid = true;
++		} else {
++			u8 addr[ETH_ALEN];
++
++			ether_addr_copy(addr, eth->random_base_mac);
++			addr[ETH_ALEN - 1] += port->id * 4 + nbq;
++			eth_hw_addr_set(netdev, addr);
++		}
+ 		dev_info(eth->dev, "generated random MAC address %pM\n",
+ 			 netdev->dev_addr);
+ 	}
