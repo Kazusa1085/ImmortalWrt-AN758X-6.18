@@ -11,7 +11,7 @@ return view.extend({
 		return Promise.all([
 			uci.load('firewall'),
 			uci.load('network-opt'),
-			L.resolveDefault(fs.exec('/usr/libexec/network-opt-status'), '')
+			L.resolveDefault(fs.exec_direct('/usr/libexec/network-opt-status'), '')
 		]);
 	},
 
