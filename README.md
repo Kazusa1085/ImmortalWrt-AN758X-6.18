@@ -98,10 +98,17 @@ cd ImmortalWrt-AN758X-6.18
 ./scripts/feeds update -a
 ./scripts/feeds install -a
 
-make menuconfig
-# Target: Airoha -> AN7583 -> VSOL V2902A-S (UBI)
-# 或使用与本设备匹配的 seed config 覆盖 .config
+# 选择一整套设备配置（四个文件不要混用）
+# XG2010G:
+cp configs/xg2010g-ubi.config .config
+# XG040G-MD:
+# cp configs/xg040g-md-ubi.config .config
+# XG040G-MF:
+# cp configs/xg040g-mf-ubi.config .config
+# VSOL V2902A-S:
+# cp configs/vsol-v2902a-s-ubi.config .config
 
+make defconfig
 make -j$(nproc)
 ```
 
