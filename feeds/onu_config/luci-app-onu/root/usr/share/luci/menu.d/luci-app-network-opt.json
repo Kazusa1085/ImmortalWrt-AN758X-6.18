@@ -1,10 +1,25 @@
 {
-	"admin/network/network-opt": {
-		"title": "网络优化",
-		"order": 100,
-		"action": {
-			"type": "view",
-			"path": "network-opt/overview"
-		}
-	}
+  "admin/network/network-opt": {
+    "title": "网络优化",
+    "order": 100,
+    "action": {
+      "type": "firstchild"
+    }
+  },
+  "admin/network/network-opt/status": {
+    "title": "运行状态",
+    "order": 20,
+    "action": {
+      "type": "view",
+      "path": "network-opt/status"
+    }
+  },
+  "admin/network/network-opt/settings": {
+    "title": "设置",
+    "order": 10,
+    "action": {
+      "type": "view",
+      "path": "network-opt/settings"
+    }
+  }
 }
