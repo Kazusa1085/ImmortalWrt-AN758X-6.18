@@ -1,0 +1,60 @@
+#!/bin/sh /etc/rc.common
+# shellbox: private ttyd instance for the LuCI ShellBox terminal.
+START=98
+STOP=10
+USE_PROCD=1
+PROG=/usr/bin/ttyd
+
+start_service() {
+	local enabled bind port command font_size ssl ssl_cert ssl_key
+	local check_origin max_clients zmodem
+
+	config_load shellbox
+	config_get_bool enabled main enabled 1
+	[ "$enabled" = "1" ] || return 0
+	config_get bind main bind lan
+	case "$bind" in lan|all) ;; *) bind=lan ;; esac
+	config_get port main port 7682
+	config_get command main command '/bin/login'
+	config_get font_size main font_size 14
+	config_get_bool ssl main ssl 0
+	config_get ssl_cert main ssl_cert ''
+	config_get ssl_key main ssl_key ''
+	config_get_bool check_origin main check_origin 0
+	config_get max_clients main max_clients 0
+	config_get_bool zmodem main zmodem 0
+
+	[ -x "$PROG" ] || return 0
+	mkdir -p /tmp/upload
+
+	procd_open_instance
+	procd_set_param command "$PROG" -W -p "$port" -t "fontSize=$font_size" -t "shellbox=1"
+	procd_set_param env SHELLBOX=1
+
+	case "$bind" in
+		lan) procd_append_param command -i br-lan ;;
+		all) ;;
+	esac
+
+	[ "$max_clients" -gt 0 ] 2>/dev/null && procd_append_param command -m "$max_clients"
+	[ "$check_origin" = "1" ] && procd_append_param command -O
+	[ "$zmodem" = "1" ] && procd_append_param command -t "enableZmodem=1"
+	if [ "$ssl" = "1" ] && [ -n "$ssl_cert" ] && [ -n "$ssl_key" ]; then
+		procd_append_param command -S -C "$ssl_cert" -K "$ssl_key"
+	fi
+	[ -n "$command" ] && procd_append_param command "$command"
+
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 0
+	procd_set_param stderr 0
+	procd_close_instance
+}
+
+service_triggers() {
+	procd_add_reload_trigger "shellbox"
+}
+
+reload_service() {
+	stop
+	start
+}

@@ -1,0 +1,11 @@
+--- a/drivers/clk/clk-en7523.c
++++ b/drivers/clk/clk-en7523.c
+@@ -1081,7 +1081,7 @@ static void en7581_pci_disable(struct clk_hw *hw)
+ 
+ 	mask = REG_PCI_CONTROL_REFCLK_EN0 | REG_PCI_CONTROL_REFCLK_EN1;
+ 	regmap_clear_bits(map, REG_PCI_CONTROL, mask);
+-	usleep_range(1000, 2000);
++	udelay(1000);
+ }
+ 
+ static void en7523_register_clocks(struct device *dev, struct clk_hw_onecell_data *clk_data,

@@ -1,0 +1,120 @@
+#!/bin/sh
+# shellbox-ctl - privileged helper for the ShellBox file panel.
+# All commands are whitelisted individually in the rpcd ACL.
+set -u
+
+usage() {
+	cat <<'EOF'
+usage:
+  shellbox-ctl mkdir <path>
+  shellbox-ctl mv <src> <dst>
+  shellbox-ctl rm <path>
+  shellbox-ctl pack <path> <out.tar.gz>
+  shellbox-ctl unpack <archive> <destdir>
+  shellbox-ctl checksum <md5|sha1|sha256> <file>
+  shellbox-ctl apk <add|del|info|...> [apk args...]
+EOF
+	exit 1
+}
+
+die() {
+	echo "ERROR: $*" >&2
+	exit 1
+}
+
+check_path() {
+	case "$1" in
+		/*) ;;
+		*) die "path must be absolute: $1" ;;
+	esac
+	case "/$1/" in
+		*/../*) die "'..' is not allowed in paths: $1" ;;
+	esac
+}
+
+check_rm_target() {
+	case "$1" in
+		/|/proc|/sys|/dev|/rom|/overlay|/bin|/sbin|/usr|/lib|/lib64|/www)
+			die "refusing to remove critical path: $1" ;;
+	esac
+}
+
+[ $# -ge 1 ] || usage
+cmd="$1"
+shift
+
+case "$cmd" in
+	mkdir)
+		[ $# -eq 1 ] || usage
+		check_path "$1"
+		exec /bin/mkdir -p "$1"
+		;;
+	mv)
+		[ $# -eq 2 ] || usage
+		check_path "$1"
+		check_path "$2"
+		[ -e "$1" ] || die "no such file or directory: $1"
+		[ -e "$2" ] && die "destination already exists: $2"
+		exec /bin/mv "$1" "$2"
+		;;
+	rm)
+		[ $# -eq 1 ] || usage
+		check_path "$1"
+		check_rm_target "$1"
+		[ -e "$1" ] || die "no such file or directory: $1"
+		exec /bin/rm -rf "$1"
+		;;
+	pack)
+		[ $# -eq 2 ] || usage
+		check_path "$1"
+		check_path "$2"
+		[ -e "$1" ] || die "no such file or directory: $1"
+		if [ -d "$1" ]; then
+			parent=$(dirname "$1")
+			base=$(basename "$1")
+			rm -f "$2"
+			/bin/tar -C "$parent" -czf "$2" "$base" || die "packing failed"
+		else
+			/bin/cp -f "$1" "$2" || die "copy failed"
+		fi
+		echo "packed=$2 bytes=$(wc -c < "$2" | tr -d ' ')"
+		;;
+	unpack)
+		[ $# -eq 2 ] || usage
+		check_path "$1"
+		check_path "$2"
+		[ -f "$1" ] || die "not a regular file: $1"
+		case "$1" in
+			*.zip|*.tar.gz|*.tgz|*.tar.xz|*.txz|*.tar.bz2|*.tbz2|*.tbz|*.tar) ;;
+			*) die "unsupported archive type: $1" ;;
+		esac
+		/bin/mkdir -p "$2" || die "cannot create $2"
+		case "$1" in
+			*.zip)                  exec /usr/bin/unzip -o -d "$2" "$1" ;;
+			*.tar.gz|*.tgz)         exec /bin/tar -xzf "$1" -C "$2" ;;
+			*.tar.xz|*.txz)         exec /bin/tar -xJf "$1" -C "$2" ;;
+			*.tar.bz2|*.tbz2|*.tbz) exec /bin/tar -xjf "$1" -C "$2" ;;
+			*.tar)                  exec /bin/tar -xf "$1" -C "$2" ;;
+		esac
+		;;
+	checksum)
+		[ $# -eq 2 ] || usage
+		check_path "$2"
+		[ -f "$2" ] || die "not a regular file: $2"
+		case "$1" in
+			md5)    exec /usr/bin/md5sum "$2" ;;
+			sha1)   exec /usr/bin/sha1sum "$2" ;;
+			sha256) exec /usr/bin/sha256sum "$2" ;;
+			*) die "unsupported algorithm: $1" ;;
+		esac
+		;;
+	apk)
+		[ $# -ge 1 ] || usage
+		exec 200>/tmp/apk.lock
+		flock -x 200 || die "failed to acquire the apk lock"
+		exec /usr/bin/apk "$@"
+		;;
+	*)
+		usage
+		;;
+esac

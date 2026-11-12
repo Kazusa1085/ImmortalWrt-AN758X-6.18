@@ -7,14 +7,44 @@ json_init
 
 model="$(jsonfilter -i /etc/board.json -e '@.model.name' 2>/dev/null)"
 factory_size="$(jsonfilter -i /etc/board.json -e '@.pon_data.factory.size' 2>/dev/null)"
-factory_index="$(find_mtd_index factory 2>/dev/null)"
-cal_path="$(find /sys/devices -path '*cells/calibration@260000,0' 2>/dev/null | head -1)"
+storage="$(jsonfilter -i /etc/board.json -e '@.pon_data.factory.type' 2>/dev/null)"
+parent="$(jsonfilter -i /etc/board.json -e '@.pon_data.factory.parent' 2>/dev/null)"
+factory_index=
+factory_target=
+factory_storage="$storage"
 
+case "$storage" in
+	mtd)
+		factory_index="$(find_mtd_index factory 2>/dev/null)"
+		[ -n "$factory_index" ] && factory_target="/dev/mtd$factory_index"
+		;;
+	ubi)
+		ubidev="$(nand_find_ubi "$parent" 2>/dev/null)"
+		if [ -z "$ubidev" ]; then
+			index="$(find_mtd_index "$parent" 2>/dev/null)"
+			if [ -n "$index" ]; then
+				ubiattach -m "$index" >/dev/null 2>&1 || true
+				ubidev="$(nand_find_ubi "$parent" 2>/dev/null)"
+			fi
+		fi
+		if [ -n "$ubidev" ]; then
+			volume="$(nand_find_volume "$ubidev" factory 2>/dev/null)"
+			if [ -n "$volume" ]; then
+				factory_target="/dev/$volume"
+				factory_index="$(cat "/sys/class/ubi/$volume/vol_id" 2>/dev/null)"
+			fi
+		fi
+		;;
+esac
+
+[ -n "$factory_size" ] || factory_size=0
 json_add_string model_name "$model"
-json_add_int factory_size "${factory_size:-0}"
+json_add_string factory_storage "$factory_storage"
+json_add_string factory_target "$factory_target"
+json_add_int factory_size "$factory_size"
 json_add_string factory_index "$factory_index"
-if [ -n "$factory_index" ]; then
-	json_add_string factory_sha256 "$(sha256sum "/dev/mtd$factory_index" 2>/dev/null | cut -d' ' -f1)"
+if [ -n "$factory_target" ] && [ -r "$factory_target" ]; then
+	json_add_string factory_sha256 "$(sha256sum "$factory_target" 2>/dev/null | cut -d' ' -f1)"
 fi
 
 json_add_object fields
@@ -23,18 +53,19 @@ for field in pon_sn pon_mac; do
 	size="$(jsonfilter -i /etc/board.json -e "@.identity.targets.factory.fields.$field.size" 2>/dev/null)"
 	encoding="$(jsonfilter -i /etc/board.json -e "@.identity.targets.factory.fields.$field.encoding" 2>/dev/null)"
 	value=
-	if [ -n "$offset" ] && [ -n "$size" ] && [ -n "$factory_index" ]; then
-		value="$(dd if="/dev/mtd$factory_index" bs=1 skip="$offset" count="$size" 2>/dev/null | tr -d '\000')"
+	if [ -n "$offset" ] && [ -n "$size" ] && [ -n "$factory_target" ] && [ -r "$factory_target" ]; then
+		value="$(dd if="$factory_target" bs=1 skip="$offset" count="$size" 2>/dev/null | tr -d '\000')"
 	fi
 	json_add_object "$field"
-	json_add_int offset "${offset:-0}"
-	json_add_int size "${size:-0}"
+	json_add_int offset "$offset"
+	json_add_int size "$size"
 	json_add_string encoding "$encoding"
 	json_add_string value "$value"
 	json_select ..
 done
 json_select ..
 
+cal_path="$(find /sys/devices -path '*cells/calibration@260000,0' 2>/dev/null | head -1)"
 json_add_object calibration
 json_add_string path "$cal_path"
 if [ -n "$cal_path" ] && [ -r "$cal_path" ]; then

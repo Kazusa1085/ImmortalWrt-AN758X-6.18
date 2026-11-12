@@ -80,7 +80,7 @@ PKG_VERSION:=0.1.0
 # voice 2100). The IPTV page drops its tabs and its multicast-to-unicast tab:
 # the bridge rows, then the IGMP/MLD switches, now sit in one flat card, and the
 # relay is driven by rtp2httpd's own page.
-PKG_RELEASE:=31
+PKG_RELEASE:=33
 
 PKG_LICENSE:=Apache-2.0 GPL-2.0-only
 

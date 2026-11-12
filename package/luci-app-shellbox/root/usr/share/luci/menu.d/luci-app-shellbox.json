@@ -1,0 +1,40 @@
+{
+  "admin/system/shellbox": {
+    "title": "终端Plus",
+    "order": 88,
+    "action": {
+      "type": "firstchild"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-shellbox"
+      ]
+    }
+  },
+  "admin/system/shellbox/terminal": {
+    "title": "终端",
+    "order": 10,
+    "action": {
+      "type": "view",
+      "path": "shellbox/terminal"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-shellbox"
+      ]
+    }
+  },
+  "admin/system/shellbox/settings": {
+    "title": "设置",
+    "order": 20,
+    "action": {
+      "type": "view",
+      "path": "shellbox/settings"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-shellbox"
+      ]
+    }
+  }
+}

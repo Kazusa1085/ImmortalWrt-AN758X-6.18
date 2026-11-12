@@ -1,0 +1,444 @@
+/* shellbox —— 终端 + 文件 的布局样式 */
+
+.shellbox-tabs {
+	margin-left: auto;
+	font-size: 90%;
+}
+
+.shellbox-tabs .btn {
+	padding: .2em .6em;
+}
+
+.shellbox-toolbar {
+	display: flex;
+	align-items: center;
+	gap: .5em;
+	flex-wrap: wrap;
+	margin: .2em 0 .5em 0;
+}
+
+.shellbox-state {
+	display: inline-flex;
+	align-items: center;
+	gap: .35em;
+	white-space: nowrap;
+}
+
+.shellbox-dot {
+	display: inline-block;
+	width: .6em;
+	height: .6em;
+	border-radius: 50%;
+	background: #999;
+}
+
+.shellbox-dot-open       { background: #2e9e4f; }
+.shellbox-dot-closed     { background: #c0392b; }
+.shellbox-dot-connecting { background: #d6a01f; }
+
+.shellbox-body {
+	display: flex;
+	align-items: stretch;
+	height: 62vh;
+	min-height: 360px;
+}
+
+.shellbox-pane {
+	display: flex;
+	min-width: 200px;
+	overflow: hidden;
+}
+
+.shellbox-pane-term  { flex: 0.55 1 0; }
+.shellbox-pane-files { flex: 0.45 1 0; }
+
+.shellbox-term {
+	flex: 1 1 auto;
+	min-width: 0;
+	padding: 4px;
+	background: #1b1b1b;
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+/* xterm 自己会算尺寸，这里只保证它填满容器 */
+.shellbox-term .terminal,
+.shellbox-term .xterm {
+	height: 100%;
+}
+
+.shellbox-splitter {
+	flex: 0 0 6px;
+	cursor: col-resize;
+	background: transparent;
+	border-left: 1px solid transparent;
+	border-right: 1px solid transparent;
+}
+
+.shellbox-splitter:hover {
+	border-left-color: #888;
+	border-right-color: #888;
+}
+
+.shellbox-files-wrap {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: auto;
+	padding-left: .4em;
+}
+
+.shellbox-files .table {
+	table-layout: fixed;
+}
+
+.shellbox-files .table td:first-child {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.shellbox-files .table th,
+.shellbox-files .table td {
+	padding: .15em .35em;
+}
+
+@media (max-width: 900px) {
+	.shellbox-body {
+		flex-direction: column;
+		height: auto;
+	}
+
+	.shellbox-pane {
+		min-height: 260px;
+	}
+
+	.shellbox-splitter {
+		display: none;
+	}
+}
+
+/* action column fix: keep the row action button fully inside the pane */
+.shellbox-files-wrap {
+	padding-right: .65em;
+}
+
+.shellbox-files .table {
+	width: 100%;
+	table-layout: fixed;
+}
+
+.shellbox-files .table th:last-child,
+.shellbox-files .table td:last-child {
+	width: 3.4em;
+	min-width: 3.4em;
+	padding-right: .55em;
+	padding-left: .15em;
+	text-align: center;
+}
+
+.shellbox-files .table td:last-child .btn {
+	min-width: 2.1em;
+	padding: .15em .3em;
+}
+
+/* narrow-screen layout: keep the action button visible and avoid sideways table scrolling */
+@media (max-width: 900px) {
+	.shellbox-files .table .col-size,
+	.shellbox-files .table .col-time {
+		display: none;
+	}
+
+	.shellbox-files .table .col-name {
+		width: auto;
+		min-width: 0;
+	}
+
+	.shellbox-files .table .col-actions {
+		width: 3.6em;
+		min-width: 3.6em;
+		padding-right: .7em;
+	}
+
+	.shellbox-files-wrap {
+		overflow-x: hidden;
+		padding-right: .8em;
+	}
+
+	.shellbox-toolbar {
+		flex-wrap: wrap;
+		row-gap: .35em;
+	}
+
+	.shellbox-toolbar > span[style] {
+		flex: 1 1 100%;
+		margin-left: 0 !important;
+		flex-wrap: wrap;
+		row-gap: .35em;
+	}
+
+	.shellbox-toolbar .cbi-input-text {
+		max-width: 9em;
+	}
+
+	.shellbox-pane-term {
+		min-height: 45vh;
+	}
+
+	.shellbox-pane-files {
+		min-height: 50vh;
+	}
+}
+
+@media (max-width: 600px) {
+	.shellbox-toolbar .cbi-input-text {
+		max-width: 7em;
+	}
+
+	.shellbox-pane-term {
+		min-height: 40vh;
+	}
+
+	.shellbox-pane-files {
+		min-height: 55vh;
+	}
+}
+
+/* compact row action and full-height narrow layout */
+.shellbox-files .table td.col-actions .btn {
+	display: inline-block;
+	width: auto;
+	min-width: 0;
+	padding: .12em .32em;
+	line-height: 1.35;
+}
+
+@media (max-width: 1200px) {
+	.shellbox {
+		display: flex;
+		flex-direction: column;
+		height: calc(100vh - 185px);
+		min-height: 560px;
+	}
+
+	.shellbox-toolbar {
+		flex: 0 0 auto;
+	}
+
+	.shellbox-body {
+		flex: 1 1 auto;
+		height: auto;
+		min-height: 0;
+		flex-direction: column;
+	}
+
+	.shellbox-pane-term {
+		flex: 0 0 38%;
+		min-height: 0;
+	}
+
+	.shellbox-pane-files {
+		flex: 1 1 auto;
+		min-height: 0;
+	}
+
+	.shellbox-splitter {
+		display: none;
+	}
+
+	.shellbox-files-wrap {
+		height: 100%;
+		overflow: auto;
+		overflow-x: hidden;
+		padding-right: .8em;
+	}
+
+	.shellbox-files .table .col-size,
+	.shellbox-files .table .col-time {
+		display: none;
+	}
+
+	.shellbox-files .table .col-name {
+		width: auto;
+		min-width: 0;
+	}
+
+	.shellbox-files .table .col-actions {
+		width: 2.8em;
+		min-width: 2.8em;
+		padding: 0 .25em;
+		text-align: center;
+	}
+
+	.shellbox-toolbar {
+		flex-wrap: wrap;
+		row-gap: .35em;
+	}
+
+	.shellbox-toolbar > span[style] {
+		flex: 1 1 100%;
+		margin-left: 0 !important;
+		flex-wrap: wrap;
+		row-gap: .35em;
+	}
+}
+
+@media (max-width: 600px) {
+	.shellbox-pane-term {
+		flex-basis: 36%;
+	}
+}
+
+/* sticky file toolbar + combined editable breadcrumb */
+.shellbox-files-head {
+	position: sticky;
+	top: 0;
+	z-index: 10;
+	background: var(--background-color-high, #14181d);
+	padding: .15em 0 .45em;
+	border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.shellbox-files-top,
+.shellbox-files-actions {
+	display: flex;
+	align-items: center;
+	gap: .35em;
+}
+
+.shellbox-files-actions {
+	margin-top: .35em;
+}
+
+.shellbox-pathbar {
+	display: flex;
+	align-items: center;
+	gap: .2em;
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 2.2em;
+	padding: .2em .45em;
+	border: 1px solid rgba(255,255,255,.16);
+	border-radius: 6px;
+	background: rgba(255,255,255,.025);
+	overflow: hidden;
+	cursor: text;
+	white-space: nowrap;
+}
+
+.shellbox-pathbar a {
+	color: var(--link-color, #5aa9e6);
+	text-decoration: none;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.shellbox-pathbar .shellbox-crumb-sep {
+	opacity: .45;
+}
+
+.shellbox-pathbar .shellbox-path-edit {
+	margin-left: auto;
+	flex: 0 0 auto;
+	padding: .05em .4em;
+	opacity: .75;
+}
+
+.shellbox-pathbar input {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.shellbox-files-table {
+	width: 100%;
+	min-width: 0;
+	overflow: visible;
+}
+
+.shellbox-files-pager {
+	display: flex;
+	justify-content: space-between;
+	margin-top: .35em;
+}
+
+/* 1Panel-style address bar */
+.shellbox-pathbar {
+	display: flex;
+	align-items: center;
+	gap: 1px;
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 2.15em;
+	padding: .2em .5em;
+	border: 1px solid rgba(255,255,255,.14);
+	border-radius: 6px;
+	background: var(--background-color-high, #252a31);
+	overflow: hidden;
+	cursor: text;
+	white-space: nowrap;
+	transition: border-color .2s, box-shadow .2s;
+}
+
+.shellbox-pathbar:hover {
+	border-color: var(--primary-color, #4f8cff);
+}
+
+.shellbox-path-home {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 1.7em;
+	color: var(--text-color-secondary, #9aa4b2);
+	font-size: 1.15em;
+	text-decoration: none;
+}
+
+.shellbox-path-home:hover {
+	color: var(--primary-color, #6ea8ff);
+}
+
+.shellbox-path-arrow {
+	margin: 0 .15em;
+	color: var(--text-color-secondary, #7d8794);
+	font-size: .9em;
+}
+
+.shellbox-path-seg {
+	display: inline-block;
+	max-width: 12em;
+	overflow: hidden;
+	padding: 0 1px;
+	color: var(--text-color, #d4d9df);
+	text-overflow: ellipsis;
+	vertical-align: bottom;
+	white-space: nowrap;
+	text-decoration: none;
+}
+
+.shellbox-path-seg:hover {
+	color: var(--primary-color, #6ea8ff);
+}
+
+.shellbox-pathbar input {
+	flex: 1 1 auto;
+	min-width: 0;
+	padding: 0;
+	border: 0;
+	outline: none;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+}
+
+/* address bar should not leave a differently-colored empty block */
+.shellbox-files-head {
+	background: var(--background-color, #04070e);
+}
+
+.shellbox-pathbar {
+	background: transparent;
+}
+
+.shellbox-pathbar:hover {
+	background: rgba(255,255,255,.025);
+}

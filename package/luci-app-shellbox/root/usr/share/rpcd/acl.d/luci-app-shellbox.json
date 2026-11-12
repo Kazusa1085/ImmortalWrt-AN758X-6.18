@@ -1,0 +1,74 @@
+{
+  "luci-app-shellbox": {
+    "description": "Grant access to the shellbox terminal + file panel",
+    "read": {
+      "cgi-io": [
+        "download",
+        "exec"
+      ],
+      "file": {
+        "/*": [
+          "list",
+          "stat",
+          "read"
+        ],
+        "/etc/init.d/shellbox running": [
+          "exec"
+        ],
+        "/usr/sbin/shellbox-ctl checksum *": [
+          "exec"
+        ],
+        "/usr/sbin/shellbox-ctl pack *": [
+          "exec"
+        ]
+      },
+      "ubus": {
+        "file": [
+          "list",
+          "stat",
+          "read",
+          "md5"
+        ]
+      },
+      "uci": [
+        "shellbox"
+      ]
+    },
+    "write": {
+      "cgi-io": [
+        "upload"
+      ],
+      "file": {
+        "/*": [
+          "write"
+        ],
+        "/etc/init.d/shellbox restart": [
+          "exec"
+        ],
+        "/usr/sbin/shellbox-ctl mkdir *": [
+          "exec"
+        ],
+        "/usr/sbin/shellbox-ctl mv *": [
+          "exec"
+        ],
+        "/usr/sbin/shellbox-ctl rm *": [
+          "exec"
+        ],
+        "/usr/sbin/shellbox-ctl unpack *": [
+          "exec"
+        ],
+        "/usr/sbin/shellbox-ctl apk *": [
+          "exec"
+        ]
+      },
+      "ubus": {
+        "file": [
+          "remove"
+        ]
+      },
+      "uci": [
+        "shellbox"
+      ]
+    }
+  }
+}

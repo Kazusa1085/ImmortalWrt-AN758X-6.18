@@ -1,0 +1,78 @@
+#!/bin/sh
+# Runtime ONU hardware capabilities shared by the one luci-app-onu package.
+# Keep model/port/identity layout in 03_pon_data; this file only declares
+# capability flags and presentation labels the frontend must not hardcode.
+
+. /lib/functions/uci-defaults.sh
+
+board_config_update
+
+case "$(board_name)" in
+gemtek,xg2010g*)
+	json_add_object features
+	json_add_boolean sfp 0
+	json_add_boolean voice 1
+	json_add_object ports
+	json_add_object lan1
+	json_add_string label "10G LAN1"
+	json_add_int speed 10000
+	json_close_object
+	json_add_object lan2
+	json_add_string label "10G LAN2"
+	json_add_int speed 10000
+	json_close_object
+	json_add_object lan3
+	json_add_string label "2.5G LAN3"
+	json_add_int speed 2500
+	json_close_object
+	json_add_object lan4
+	json_add_string label "1G LAN4"
+	json_add_int speed 1000
+	json_close_object
+	json_close_object
+	json_close_object
+	;;
+vsol,v2902a-s-ubi)
+	json_add_object features
+	json_add_boolean sfp 1
+	json_add_boolean voice 0
+	json_add_object ports
+	json_add_object lan1
+	json_add_string label "1G LAN1"
+	json_add_int speed 1000
+	json_close_object
+	json_add_object eth1
+	json_add_string label "10G SFP+"
+	json_add_int speed 10000
+	json_close_object
+	json_close_object
+	json_close_object
+	;;
+nokia,xg-040g-*)
+	json_add_object features
+	json_add_boolean sfp 0
+	json_add_boolean voice 0
+	json_add_object ports
+	json_add_object lan1
+	json_add_string label "2.5G LAN1"
+	json_add_int speed 2500
+	json_close_object
+	json_add_object lan2
+	json_add_string label "1G LAN2"
+	json_add_int speed 1000
+	json_close_object
+	json_add_object lan3
+	json_add_string label "1G LAN3"
+	json_add_int speed 1000
+	json_close_object
+	json_add_object lan4
+	json_add_string label "1G LAN4"
+	json_add_int speed 1000
+	json_close_object
+	json_close_object
+	json_close_object
+	;;
+esac
+
+board_config_flush
+exit 0

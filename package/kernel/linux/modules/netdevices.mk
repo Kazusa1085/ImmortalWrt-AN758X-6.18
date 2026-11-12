@@ -186,12 +186,19 @@ $(eval $(call KernelPackage,libeth))
 define KernelPackage/libphy
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=PHY library
+ifeq ($(KERNEL_PATCHVER),7.3)
+  KCONFIG:=CONFIG_PHYLIB \
+	   CONFIG_PHYLIB_LEDS=y
+  FILES:=$(LINUX_DIR)/drivers/net/phy/libphy.ko
+  AUTOLOAD:=$(call AutoLoad,15,libphy,1)
+else
   KCONFIG:=CONFIG_PHYLIB \
 	   CONFIG_PHYLIB_LEDS=y \
 	   CONFIG_MDIO_BUS
   FILES:=$(LINUX_DIR)/drivers/net/phy/libphy.ko \
     $(LINUX_DIR)/drivers/net/phy/mdio-bus.ko@ge6.18
   AUTOLOAD:=$(call AutoLoad,15,libphy mdio-bus@ge6.18,1)
+endif
 endef
 
 define KernelPackage/libphy/description
@@ -646,8 +653,9 @@ define KernelPackage/phy-airoha-en8811h
   DEPENDS:=+airoha-en8811h-firmware +kmod-libphy
   KCONFIG:=CONFIG_AIR_EN8811H_PHY
   FILES:= \
-   $(LINUX_DIR)/drivers/net/phy/air_en8811h.ko
-  AUTOLOAD:=$(call AutoLoad,18,air_en8811h,1)
+   $(LINUX_DIR)/drivers/net/phy/air_en8811h.ko \
+   $(LINUX_DIR)/drivers/net/phy/air_phy_lib.ko
+  AUTOLOAD:=$(call AutoLoad,18,air_phy_lib air_en8811h,1)
 endef
 
 define KernelPackage/phy-airoha-en8811h/description
