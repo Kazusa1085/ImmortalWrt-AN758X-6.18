@@ -3,6 +3,27 @@
 本文件记录 Gemtek Brightspeed 固件仓库的重要功能、稳定性和维护变更。常规的
 ImmortalWrt 上游合并不逐项展开，仅记录会影响本设备构建或运行行为的内容。
 
+## 2026-11-12
+
+### Linux 7.3.3 初始移植
+
+- 将目标从 Linux 6.18 切换到 kernel.org Linux 7.3.3，新增 `target/linux/generic/config-7.3`、
+  `kernel-7.3` 与对应的 backport/pending/hack 目录。
+- 移植 Airoha Ethernet、PPE、NPU、PCS、pinctrl 与 PON 驱动到 7.3；补齐 MDIO、
+  MT7530 DSA、RTL8261N 和 EN8811H 的 LAN 初始化。
+- 修复 6.18 pinctrl group 与 7.3 pinctrl 不兼容导致的
+  `invalid group "pon_tx_disable_gpio"`，PON 资源现在可以绑定到 `pon0`。
+- 引入 EN7572 optical frontend 和 AN7583 NPU 固件；VSOL 的 NPU 节点已在 DTS 启用。
+- 修复 `en7581_pci_disable` 在时钟关闭路径的原子上下文睡眠，消除启动时的
+  `scheduling while atomic` 与 preemption imbalance 告警。
+- 新增 XG2010G（AN7581，UBI）与 VSOL V2902A-S（AN7583，UBI）的 7.3 镜像。
+- 统一板级能力描述：XG2010G 为 `features.sfp = 0`，VSOL 为 `features.sfp = 1`；
+  网络优化页面根据该字段显示或隐藏 SFP 配置。
+- 新增 TerminalPlus 1.1-r1（终端 + 文件面板），并修复网络优化页面的
+  `[object Object]` 状态显示和子页布局。
+- 验证边界：XG2010G 的 PON 驱动、EN7572 和 OMCI/OAM 已绑定；测试机 BOB
+  A0/A2 校准为空，PON 仍等待光信号。VSOL 已完成 NPU、SFP 和镜像级检查。
+
 ## 2026-10-08
 
 ### 同步 ImmortalWrt 上游至 6.18.54
