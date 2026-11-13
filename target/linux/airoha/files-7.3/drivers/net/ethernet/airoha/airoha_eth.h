@@ -8,11 +8,13 @@
 #define AIROHA_ETH_H
 
 #include <linux/airoha-eth.h>
+#include <linux/atomic.h>
 #include <linux/debugfs.h>
 #include <linux/etherdevice.h>
 #include <linux/iopoll.h>
 #include <linux/kernel.h>
 #include <linux/netdevice.h>
+#include <linux/notifier.h>
 #include <linux/reset.h>
 #include <linux/soc/airoha/airoha_offload.h>
 #include <net/dsa.h>
@@ -540,6 +542,12 @@ struct airoha_flow_data {
 		u16 sid;
 		u8 num;
 	} pppoe;
+	struct {
+		u16 tunnel_id;
+		u16 session_id;
+		u8 hdr_len;
+		u8 num;
+	} l2tp;
 };
 
 enum airoha_flow_entry_type {
@@ -710,6 +718,17 @@ struct airoha_gdm_port {
 
 struct airoha_ppe {
 	struct airoha_ppe_dev dev;
+
+	atomic64_t flows_seen;
+	atomic64_t unbound_seen;
+	atomic64_t bind_committed;
+	atomic64_t bind_failed;
+	atomic64_t l2tp_seen;
+	atomic64_t l2tp_candidates;
+	atomic64_t l2tp_kernel_events;
+	atomic64_t l2tp_kernel_sessions;
+	u32 l2tp_last_tunnel;
+	u32 l2tp_last_session;
 	struct airoha_eth *eth;
 
 	void *foe;
@@ -751,6 +770,7 @@ struct airoha_eth {
 
 	struct airoha_ppe *ppe;
 	struct rhashtable flow_table;
+	struct notifier_block l2tp_nb;
 
 	struct reset_control_bulk_data rsts[AIROHA_MAX_NUM_RSTS];
 	struct reset_control_bulk_data *xsi_rsts;

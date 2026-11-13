@@ -11,12 +11,17 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/rhashtable.h>
+#include <net/ip.h>
 #include <net/ipv6.h>
 #include <linux/if_bridge.h>
 #include <linux/if_vlan.h>
 #include <linux/if_pppox.h>
+#include <linux/udp.h>
 #include <net/pkt_cls.h>
 #include <net/route.h>
+#if IS_ENABLED(CONFIG_L2TP)
+#include <net/l2tp_offload.h>
+#endif
 
 #include "airoha_regs.h"
 #include "airoha_eth.h"
@@ -40,6 +45,95 @@ static const struct rhashtable_params airoha_l2_flow_table_params = {
 	.key_len = 2 * ETH_ALEN,
 	.automatic_shrinking = true,
 };
+
+#define AIROHA_L2TPV2_PORT 1701
+
+/* Minimal L2TPv2/IPv4-over-UDP parser used by the PPE diagnostics path.
+ * It validates the outer UDP/L2TPv2 header and records the session tuple;
+ * the PPE entry itself is left to the normal flow-offload path until a
+ * dedicated L2TP flow action is available.
+ */
+static bool airoha_ppe_l2tpv2_parse(const struct sk_buff *skb,
+				    u16 *tunnel_id, u16 *session_id,
+				    u8 *hdr_len)
+{
+	struct iphdr iph_buf;
+	struct udphdr udp_buf;
+	u8 l2tp_buf[12];
+	const struct iphdr *iph;
+	const struct udphdr *udp;
+	const u8 *l2tp;
+	unsigned int off;
+	u8 flags;
+	u16 tmp;
+
+	iph = skb_header_pointer(skb, skb_network_offset(skb),
+				 sizeof(iph_buf), &iph_buf);
+	if (!iph || iph->version != 4 || iph->protocol != IPPROTO_UDP ||
+	    ip_is_fragment(iph))
+		return false;
+
+	off = skb_network_offset(skb) + iph->ihl * 4;
+	udp = skb_header_pointer(skb, off, sizeof(udp_buf), &udp_buf);
+	if (!udp ||
+	    (ntohs(udp->dest) != AIROHA_L2TPV2_PORT &&
+	     ntohs(udp->source) != AIROHA_L2TPV2_PORT))
+		return false;
+
+	off += sizeof(*udp);
+	l2tp = skb_header_pointer(skb, off, sizeof(l2tp_buf), l2tp_buf);
+	if (!l2tp)
+		return false;
+
+	flags = l2tp[0];
+	if ((flags >> 4) != 2)
+		return false;
+
+	off = 2;
+	if (flags & 0x40)	/* L: optional length field */
+		off += 2;
+	if (off + 4 > sizeof(l2tp_buf))
+		return false;
+
+	memcpy(&tmp, l2tp + off, sizeof(tmp));
+	*tunnel_id = ntohs(tmp);
+	memcpy(&tmp, l2tp + off + 2, sizeof(tmp));
+	*session_id = ntohs(tmp);
+	*hdr_len = off + 4;
+
+	return true;
+}
+
+#if IS_ENABLED(CONFIG_L2TP)
+static int airoha_ppe_l2tp_notify(struct notifier_block *nb,
+				  unsigned long action, void *data)
+{
+	struct airoha_eth *eth = container_of(nb, struct airoha_eth, l2tp_nb);
+	struct l2tp_offload_event *event = data;
+
+	if (!eth->ppe || !event)
+		return NOTIFY_DONE;
+
+	atomic64_inc(&eth->ppe->l2tp_kernel_events);
+	switch (event->type) {
+	case L2TP_OFFLOAD_SESSION_CREATED:
+		atomic64_inc(&eth->ppe->l2tp_kernel_sessions);
+		WRITE_ONCE(eth->ppe->l2tp_last_tunnel, event->tunnel_id);
+		WRITE_ONCE(eth->ppe->l2tp_last_session, event->session_id);
+		break;
+	case L2TP_OFFLOAD_SESSION_DELETED:
+		if (atomic64_read(&eth->ppe->l2tp_kernel_sessions))
+			atomic64_dec(&eth->ppe->l2tp_kernel_sessions);
+		break;
+	case L2TP_OFFLOAD_TX:
+		break;
+	default:
+		return NOTIFY_DONE;
+	}
+
+	return NOTIFY_OK;
+}
+#endif
 
 static int airoha_ppe_get_num_stats_entries(struct airoha_ppe *ppe)
 {
@@ -463,6 +557,7 @@ static int airoha_ppe_foe_entry_prepare(struct airoha_eth *eth,
 	      FIELD_PREP(AIROHA_FOE_IB1_BIND_VLAN_LAYER, data->vlan.num) |
 	      FIELD_PREP(AIROHA_FOE_IB1_BIND_VPM, data->vlan.num) |
 	      FIELD_PREP(AIROHA_FOE_IB1_BIND_PPPOE, data->pppoe.num) |
+	      (data->l2tp.num ? AIROHA_FOE_IB1_BIND_TUNNEL_DECAP : 0) |
 	      AIROHA_FOE_IB1_BIND_TTL;
 	hwe->ib1 = val;
 
@@ -1497,6 +1592,14 @@ static bool airoha_ppe_foe_skb_is_local(const struct sk_buff *skb)
 	return local;
 }
 
+static void airoha_ppe_count_bind(struct airoha_ppe *ppe, int err)
+{
+	if (err)
+		atomic64_inc(&ppe->bind_failed);
+	else
+		atomic64_inc(&ppe->bind_committed);
+}
+
 static void airoha_ppe_foe_insert_entry(struct airoha_ppe *ppe,
 					struct sk_buff *skb,
 					u32 hash, bool rx_wlan)
@@ -1511,6 +1614,15 @@ static void airoha_ppe_foe_insert_entry(struct airoha_ppe *ppe,
 	bool local = airoha_ppe_foe_skb_is_local(skb);
 	struct hlist_node *n;
 	u32 index, state;
+	u16 l2tp_tunnel, l2tp_session;
+	u8 l2tp_hdr_len;
+	int err;
+
+	atomic64_inc(&ppe->flows_seen);
+	atomic64_inc(&ppe->l2tp_seen);
+	if (airoha_ppe_l2tpv2_parse(skb, &l2tp_tunnel, &l2tp_session,
+				     &l2tp_hdr_len))
+		atomic64_inc(&ppe->l2tp_candidates);
 
 	if (!local)
 		bridge_ready = airoha_ppe_foe_prepare_bridge_subflow(ppe, skb,
@@ -1519,12 +1631,16 @@ static void airoha_ppe_foe_insert_entry(struct airoha_ppe *ppe,
 	spin_lock_bh(&ppe_lock);
 
 	hwe = airoha_ppe_foe_get_entry_locked(ppe, hash);
-	if (!hwe)
+	if (!hwe) {
+		atomic64_inc(&ppe->unbound_seen);
 		goto unlock;
+	}
 
 	state = FIELD_GET(AIROHA_FOE_IB1_BIND_STATE, hwe->ib1);
 	if (state == AIROHA_FOE_STATE_BIND)
 		goto unlock;
+
+	atomic64_inc(&ppe->unbound_seen);
 
 	native_l2b = airoha_is_7581(ppe->eth) &&
 		FIELD_GET(AIROHA_FOE_IB1_BIND_PACKET_TYPE, hwe->ib1) ==
@@ -1551,7 +1667,8 @@ static void airoha_ppe_foe_insert_entry(struct airoha_ppe *ppe,
 		    !airoha_ppe_foe_compare_entry(e, hwe))
 			continue;
 
-		airoha_ppe_foe_commit_entry(ppe, &e->data, hash, rx_wlan);
+		err = airoha_ppe_foe_commit_entry(ppe, &e->data, hash, rx_wlan);
+		airoha_ppe_count_bind(ppe, err);
 		commit_done = true;
 		e->hash = hash;
 	}
@@ -1566,9 +1683,11 @@ l2_lookup:
 	e = rhashtable_lookup_fast(&ppe->l2_flows, &br,
 				   airoha_l2_flow_table_params);
 	if (e)
-		airoha_ppe_foe_commit_subflow_entry(ppe, e, hash, rx_wlan);
+		airoha_ppe_count_bind(ppe,
+			airoha_ppe_foe_commit_subflow_entry(ppe, e, hash, rx_wlan));
 	else if (bridge_ready)
-		airoha_ppe_foe_commit_subflow(ppe, &bridge_hwe, hash, rx_wlan);
+		airoha_ppe_count_bind(ppe,
+			airoha_ppe_foe_commit_subflow(ppe, &bridge_hwe, hash, rx_wlan));
 unlock:
 	spin_unlock_bh(&ppe_lock);
 }
@@ -2299,6 +2418,12 @@ int airoha_ppe_init(struct airoha_eth *eth)
 	if (err)
 		goto error_l2_flow_table_destroy;
 
+#if IS_ENABLED(CONFIG_L2TP)
+	eth->l2tp_nb.notifier_call = airoha_ppe_l2tp_notify;
+	if (l2tp_offload_register(&eth->l2tp_nb))
+		dev_warn(eth->dev, "failed to register L2TP offload consumer\n");
+#endif
+
 	return 0;
 
 error_l2_flow_table_destroy:
@@ -2312,6 +2437,10 @@ error_flow_table_destroy:
 void airoha_ppe_deinit(struct airoha_eth *eth)
 {
 	struct airoha_npu *npu;
+
+#if IS_ENABLED(CONFIG_L2TP)
+	l2tp_offload_unregister(&eth->l2tp_nb);
+#endif
 
 	mutex_lock(&flow_offload_mutex);
 

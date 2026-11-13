@@ -222,6 +222,27 @@ static int airoha_ppe_debugfs_config_show(struct seq_file *m, void *private)
 }
 DEFINE_SHOW_ATTRIBUTE(airoha_ppe_debugfs_config);
 
+static int airoha_ppe_debugfs_stats_show(struct seq_file *m, void *private)
+{
+	struct airoha_ppe *ppe = m->private;
+
+	seq_printf(m,
+	           "flows_seen: %llu\nunbound_seen: %llu\nbind_committed: %llu\nbind_failed: %llu\nl2tp_seen: %llu\nl2tp_candidates: %llu\nl2tp_kernel_events: %llu\nl2tp_kernel_sessions: %llu\nl2tp_last_tunnel: %u\nl2tp_last_session: %u\n",
+	           (unsigned long long)atomic64_read(&ppe->flows_seen),
+	           (unsigned long long)atomic64_read(&ppe->unbound_seen),
+	           (unsigned long long)atomic64_read(&ppe->bind_committed),
+	           (unsigned long long)atomic64_read(&ppe->bind_failed),
+	           (unsigned long long)atomic64_read(&ppe->l2tp_seen),
+	           (unsigned long long)atomic64_read(&ppe->l2tp_candidates),
+	           (unsigned long long)atomic64_read(&ppe->l2tp_kernel_events),
+	           (unsigned long long)atomic64_read(&ppe->l2tp_kernel_sessions),
+	           READ_ONCE(ppe->l2tp_last_tunnel),
+	           READ_ONCE(ppe->l2tp_last_session));
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(airoha_ppe_debugfs_stats);
+
+
 int airoha_ppe_debugfs_init(struct airoha_ppe *ppe)
 {
 	ppe->debugfs_dir = debugfs_create_dir("ppe", NULL);
@@ -231,6 +252,8 @@ int airoha_ppe_debugfs_init(struct airoha_ppe *ppe)
 			    &airoha_ppe_debugfs_foe_all_fops);
 	debugfs_create_file("bind", 0444, ppe->debugfs_dir, ppe,
 			    &airoha_ppe_debugfs_foe_bind_fops);
+	debugfs_create_file("stats", 0444, ppe->debugfs_dir, ppe,
+			    &airoha_ppe_debugfs_stats_fops);
 
 	return 0;
 }

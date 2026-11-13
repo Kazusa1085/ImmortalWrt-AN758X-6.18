@@ -1,0 +1,92 @@
+diff --git a/net/l2tp/l2tp_core.c b/net/l2tp/l2tp_core.c
+index 7e042a3..d767d50 100644
+--- a/net/l2tp/l2tp_core.c
++++ b/net/l2tp/l2tp_core.c
+@@ -59,6 +59,8 @@
+ #include <asm/byteorder.h>
+ #include <linux/atomic.h>
+ 
++#include <net/l2tp_offload.h>
++
+ #include "l2tp_core.h"
+ 
+ #define CREATE_TRACE_POINTS
+@@ -87,6 +89,49 @@
+ #define L2TP_DEFAULT_DEBUG_FLAGS	0
+ 
+ #define L2TP_DEPTH_NESTING		2
++
++static ATOMIC_NOTIFIER_HEAD(l2tp_offload_chain);
++
++int l2tp_offload_register(struct notifier_block *nb)
++{
++	return atomic_notifier_chain_register(&l2tp_offload_chain, nb);
++}
++EXPORT_SYMBOL_GPL(l2tp_offload_register);
++
++void l2tp_offload_unregister(struct notifier_block *nb)
++{
++	atomic_notifier_chain_unregister(&l2tp_offload_chain, nb);
++}
++EXPORT_SYMBOL_GPL(l2tp_offload_unregister);
++
++static void l2tp_offload_notify(struct l2tp_session *session,
++				enum l2tp_offload_event_type type,
++				const u8 *hdr, unsigned int hdr_len)
++{
++	struct l2tp_tunnel *tunnel;
++	struct l2tp_offload_event event;
++
++	if (!session)
++		return;
++
++	tunnel = READ_ONCE(session->tunnel);
++	if (!tunnel)
++		return;
++
++	event = (struct l2tp_offload_event) {
++		.type = type,
++		.tunnel_id = tunnel->tunnel_id,
++		.session_id = session->session_id,
++		.peer_tunnel_id = tunnel->peer_tunnel_id,
++		.peer_session_id = session->peer_session_id,
++		.version = tunnel->version,
++		.encap = tunnel->encap,
++		.hdr = hdr,
++		.hdr_len = hdr_len,
++	};
++	atomic_notifier_call_chain(&l2tp_offload_chain, type, &event);
++}
++
+ #if L2TP_DEPTH_NESTING == SINGLE_DEPTH_NESTING
+ #error "L2TP requires its own lockdep subclass"
+ #endif
+@@ -1317,6 +1362,9 @@ static int l2tp_xmit_core(struct l2tp_session *session, struct sk_buff *skb, uns
+ 		break;
+ 	}
+ 
++	l2tp_offload_notify(session, L2TP_OFFLOAD_TX,
++			    skb->data + uhlen, hdr_len);
++
+ 	ret = l2tp_xmit_queue(tunnel, skb, &inet->cork.fl);
+ 
+ out_unlock:
+@@ -1738,6 +1786,8 @@ void l2tp_session_delete(struct l2tp_session *session)
+ {
+ 	if (!test_and_set_bit(0, &session->dead)) {
+ 		trace_delete_session(session);
++		l2tp_offload_notify(session, L2TP_OFFLOAD_SESSION_DELETED,
++				    NULL, 0);
+ 		refcount_inc(&session->ref_count);
+ 		queue_work(l2tp_wq, &session->del_work);
+ 	}
+@@ -1824,6 +1874,8 @@ struct l2tp_session *l2tp_session_create(int priv_size, struct l2tp_tunnel *tunn
+ 		l2tp_session_set_header_len(session, tunnel->version, tunnel->encap);
+ 
+ 		refcount_set(&session->ref_count, 1);
++		l2tp_offload_notify(session, L2TP_OFFLOAD_SESSION_CREATED,
++				    NULL, 0);
+ 
+ 		return session;
+ 	}
+
