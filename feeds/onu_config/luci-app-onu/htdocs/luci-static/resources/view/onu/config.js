@@ -2,6 +2,7 @@
 
 'use strict';
 'require form';
+'require fs';
 'require uci';
 'require view';
 /* Printable ASCII keeps JavaScript character counts equal to wire byte counts. */
@@ -27,6 +28,60 @@ function asciiLength(minimum, maximum) {
 	return function(sectionId, value) {
 		return validatePrintableAscii(value, minimum, maximum);
 	};
+}
+
+
+var LINE_MODE_DEFS = [
+	{ value: 'xgpon', label: _('XG-PON 10G/2.5G'), gpon: true },
+	{ value: 'xgspon', label: _('XGS-PON 10G/10G'), gpon: true },
+	{ value: 'epon-10g-1g', label: _('10G-EPON 10G/1G'), gpon: false },
+	{ value: 'epon-10g-10g', label: _('10G-EPON 10G/10G'), gpon: false }
+];
+
+function lineModeLabel(mode) {
+	for (var i = 0; i < LINE_MODE_DEFS.length; i++)
+		if (LINE_MODE_DEFS[i].value === mode)
+			return LINE_MODE_DEFS[i].label;
+
+	return mode;
+}
+
+function currentLineMode() {
+	var lines = uci.sections('pon', 'xpon') || [];
+
+	for (var i = 0; i < lines.length; i++) {
+		var sid = lines[i].name || lines[i]['.name'] || lines[i].sid;
+		var mode = uci.get('pon', sid, 'mode');
+
+		if (mode)
+			return mode;
+	}
+
+	return '';
+}
+
+function calibrationCapabilities(output) {
+	var info = {};
+
+	try { info = JSON.parse(output || '{}'); } catch (e) {}
+	var cal = info.calibration || {};
+
+	return {
+		a0: !!(cal.a0 && cal.a0.valid),
+		a2: !!(cal.a2 && cal.a2.valid)
+	};
+}
+
+function allowedLineModes(cap) {
+	if (cap.a0 && !cap.a2)
+		return LINE_MODE_DEFS.filter(function(m) { return !m.gpon; })
+			.map(function(m) { return m.value; });
+
+	if (!cap.a0 && cap.a2)
+		return LINE_MODE_DEFS.filter(function(m) { return m.gpon; })
+			.map(function(m) { return m.value; });
+
+	return LINE_MODE_DEFS.map(function(m) { return m.value; });
 }
 
 function isEponMode(mode) {
@@ -119,7 +174,16 @@ function toggleModeSections(node, modeOption) {
 }
 
 return view.extend({
-	render: function() {
+	load: function() {
+		return Promise.all([
+			L.resolveDefault(fs.exec_direct('/usr/libexec/onu-hwinfo'), ''),
+			uci.load('pon')
+		]).then(function(data) {
+			return data[0];
+		});
+	},
+
+	render: function(hwinfo) {
 		var m, s, o, modeOption;
 
 		m = new form.Map('pon', _('Authentication'),
@@ -158,18 +222,38 @@ return view.extend({
 		o.description = _('ONU class reported to the OLT in the capability ME: 0 SFU, 1 HGU (default), 2 SBU.');
 
 		o = s.option(form.ListValue, 'mode', _('Line mode'));
-		o.default = 'xgpon';
 		o.rmempty = false;
+
+		var cap = calibrationCapabilities(hwinfo);
+		var allowed = allowedLineModes(cap);
+		var saved = currentLineMode();
+
+		allowed.forEach(function(mode) {
+			o.value(mode, lineModeLabel(mode));
+		});
+
 		/*
-		 * GPON 2.5G/1.25G and EPON 1G/1G are masked out of this build: only the
-		 * 10G line modes are offered. Both values stay valid in the daemons, so a
-		 * board configured with either one still runs.
+		 * Keep the saved value visible even when the calibration data says
+		 * otherwise. The backend still accepts a forced mode; silently
+		 * replacing the saved value here could restart a working PON.
 		 */
-		o.value('xgpon', _('XG-PON 10G/2.5G'));
-		o.value('xgspon', _('XGS-PON 10G/10G'));
-		o.value('epon-10g-1g', _('10G-EPON 10G/1G'));
-		o.value('epon-10g-10g', _('10G-EPON 10G/10G'));
-		o.description = _('Choose the mode according to the carrier\'s requirements.');
+		if (saved && allowed.indexOf(saved) < 0)
+			o.value(saved, lineModeLabel(saved) + ' — ' + _('当前配置，校准不支持'));
+
+		o.default = saved || allowed[0] || 'xgpon';
+
+		if (cap.a0 && !cap.a2)
+			o.description = _('只有 A0 光校准有效，当前仅提供 10G-EPON 线路模式。');
+		else if (!cap.a0 && cap.a2)
+			o.description = _('只有 A2 光校准有效，当前仅提供 GPON 系列线路模式。');
+		else if (!cap.a0 && !cap.a2)
+			o.description = _('未检测到有效的 A0/A2 光校准数据，线路模式不会被限制。');
+		else
+			o.description = _('A0 和 A2 光校准均有效，可选择全部线路模式。');
+
+		if (saved && allowed.indexOf(saved) < 0)
+			o.description += ' ' + _('当前保存的模式不在校准支持范围内，已保留但建议核对。');
+
 		modeOption = o;
 
 	s = m.section(form.TypedSection, 'omci', _('OMCI settings'),

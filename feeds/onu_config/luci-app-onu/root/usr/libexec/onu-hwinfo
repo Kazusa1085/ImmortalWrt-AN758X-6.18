@@ -37,6 +37,45 @@ case "$storage" in
 		;;
 esac
 
+# EN7572 BOB layout: A0 starts at byte 0, A2 at byte 256. The driver treats
+# 0x80..0xd7 of each table as calibration payload and considers it empty when
+# every byte is 0x00 or every byte is 0xff.
+cal_range_valid() {
+	local path="$1"
+	local offset="$2"
+
+	[ -n "$path" ] && [ -r "$path" ] || { echo 0; return; }
+
+	dd if="$path" bs=1 skip="$offset" count=88 2>/dev/null |
+	hexdump -v -e '1/1 "%02x\n"' 2>/dev/null |
+	awk '
+		{
+			b = tolower($1)
+			if (b != "00") nz = 1
+			if (b != "ff") nf = 1
+		}
+		END { print (nz && nf) ? 1 : 0 }
+	'
+}
+
+
+cal_sha_at() {
+	local path="$1"
+	local offset="$2"
+
+	dd if="$path" bs=1 skip="$offset" count=88 2>/dev/null |
+	sha256sum 2>/dev/null | cut -d' ' -f1
+}
+
+cal_hex_at() {
+	local path="$1"
+	local offset="$2"
+
+	dd if="$path" bs=1 skip="$offset" count=16 2>/dev/null |
+	hexdump -v -e '16/1 "%02x " "\n"' 2>/dev/null |
+	tr '\n' ' ' | sed 's/[[:space:]]*$//'
+}
+
 [ -n "$factory_size" ] || factory_size=0
 json_add_string model_name "$model"
 json_add_string factory_storage "$factory_storage"
@@ -65,14 +104,44 @@ for field in pon_sn pon_mac; do
 done
 json_select ..
 
-cal_path="$(find /sys/devices -path '*cells/calibration@260000,0' 2>/dev/null | head -1)"
+cal_path="$(find /sys/devices -path '*cells/calibration@*' 2>/dev/null | head -1)"
+cal_size=0
+cal_sha=
+a0_valid=0
+a2_valid=0
+a0_hex=
+a2_hex=
+a0_sha=
+a2_sha=
+
+if [ -n "$cal_path" ] && [ -r "$cal_path" ]; then
+	cal_size="$(wc -c < "$cal_path" 2>/dev/null | tr -d ' ')"
+	cal_sha="$(sha256sum "$cal_path" 2>/dev/null | cut -d' ' -f1)"
+	a0_valid="$(cal_range_valid "$cal_path" 128)"
+	a2_valid="$(cal_range_valid "$cal_path" 384)"
+	a0_hex="$(cal_hex_at "$cal_path" 0)"
+	a2_hex="$(cal_hex_at "$cal_path" 256)"
+	a0_sha="$(cal_sha_at "$cal_path" 128)"
+	a2_sha="$(cal_sha_at "$cal_path" 384)"
+fi
+
 json_add_object calibration
 json_add_string path "$cal_path"
-if [ -n "$cal_path" ] && [ -r "$cal_path" ]; then
-	json_add_int size "$(wc -c < "$cal_path")"
-	json_add_string sha256 "$(sha256sum "$cal_path" 2>/dev/null | cut -d' ' -f1)"
-	json_add_string hex "$(hexdump -v -e '16/1 "%02x " "\n"' -n 16 "$cal_path" 2>/dev/null | tr '\n' ' ')"
-fi
+json_add_int size "$cal_size"
+json_add_string sha256 "$cal_sha"
+json_add_object a0
+json_add_boolean valid "$a0_valid"
+json_add_int offset 0
+json_add_string sha256 "$a0_sha"
+json_add_string hex "$a0_hex"
+json_select ..
+json_add_object a2
+json_add_boolean valid "$a2_valid"
+json_add_int offset 256
+json_add_string sha256 "$a2_sha"
+json_add_string hex "$a2_hex"
+json_select ..
+json_add_string hex "$a0_hex"
 json_select ..
 
 json_dump
